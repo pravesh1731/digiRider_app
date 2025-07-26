@@ -1,4 +1,4 @@
-package com.example.digirider
+package com.example.rider
 
 import io.flutter.embedding.android.FlutterActivity
 
