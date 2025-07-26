@@ -8,6 +8,8 @@ import 'package:digirider/global/Common.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/bottomSnackBar.dart';
+
 class PersonalInfoPage extends StatefulWidget {
   final String riderDomain;
   final String email;
@@ -24,6 +26,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
 
   String? _selectedCity;
   String? _selectedVehicle;
+  bool _isLoading = false;
 
   final List<String> cities = ['Jodhpur', 'Gotan'];
   final List<String> vehicles = ['Bike', 'Car', 'Auto'];
@@ -38,9 +41,10 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
         _selectedCity == null ||
         _selectedVehicle == null ||
         widget.riderDomain.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please fill in all the details properly.')),
-      );
+      getSnackBar(context, "Please fill in all the details properly.", Colors.orange, 2);
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   SnackBar(content: Text('Please fill in all the details properly.')),
+      // );
       return;
     }
 
@@ -48,16 +52,27 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
   }
 
   Future<void> _submitDetails() async {
+    if (_selectedCity == null || _selectedVehicle == null) {
+      getSnackBar(context, "Please select your city and vehicle type", Colors.orange, 2);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final deviceToken = await prefs.getString('deviceToken');
+
     final payload = {
       "name": _nameController.text.trim(),
-      "email": widget.email, // You can fetch from FirebaseAuth or another source
+      "email": widget.email,
       "cityName": _selectedCity!,
       "phoneNumber": _phoneController.text.trim(),
       "riderDomain": widget.riderDomain,
       "vehicleType": _selectedVehicle!,
+      "deviceToken": deviceToken,
     };
-    print('payload');
-    print(payload);
 
     try {
       final response = await http.post(
@@ -71,7 +86,6 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
         final rider = data['data'];
 
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('isLoggedIn', true);
         await prefs.setString('name', rider['name'] ?? '');
         await prefs.setString('email', rider['email'] ?? '');
         await prefs.setString('cityName', rider['cityName'] ?? '');
@@ -83,26 +97,26 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
         await prefs.setBool('active', rider['active'] ?? false);
         await prefs.setString('riderId', rider['_id'] ?? '');
 
-        // Optional: Save timestamp
         if (rider['currentLocation'] != null && rider['currentLocation']['timestamp'] != null) {
           await prefs.setString('locationTimestamp', rider['currentLocation']['timestamp']);
         }
+        getSnackBar(context, "Account created Successfully", Colors.green, 0);
 
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => DocumentUploadPage()),
         );
       } else {
         final data = jsonDecode(response.body);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'Something went wrong')),
-        );
+        getSnackBar(context, data['message'] ?? 'Something went wrong', Colors.orange, 2);
       }
 
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to submit: $e')),
-      );
+      getSnackBar(context, "Failed to submit. Try again.", Colors.redAccent, 2);
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -110,103 +124,138 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarIconBrightness: Brightness.dark,
-        statusBarColor: Colors.transparent,
-      ),
-      child: Scaffold(
+    return Scaffold(
+      backgroundColor: Common.secondary,
+      appBar: AppBar(
+        elevation: 0,
+        toolbarHeight: 0,
         backgroundColor: Common.background,
-        body: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12.0),
-          child: Center(
-            child: Card(
-              elevation: 4,
-              color: Common.primary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      "Enter your details",
-                      style: TextStyle(
-                        fontFamily: 'bold',
-                        fontSize: 20,
-                        fontWeight: Common.weight,
-                        color: Common.secondary,
-                      ),
-                    ),
-                    SizedBox(height: 20),
-                    _buildTextField(_nameController, "Name"),
-                    SizedBox(height: 15),
-                    _buildTextField(
-                      _phoneController,
-                      "Phone number",
-                      keyboardType: TextInputType.phone,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
-                    ),
-                    SizedBox(height: 15),
-                    Row(
-                      children: [
-                        Expanded(child: _buildDropdown("Select city", cities, _selectedCity, (value) {
-                          setState(() => _selectedCity = value);
-                        })),
-                        SizedBox(width: 10),
-                        Expanded(child: _buildDropdown("Select vehicle", vehicles, _selectedVehicle, (value) {
-                          setState(() => _selectedVehicle = value);
-                        })),
-                      ],
-                    ),
-                    SizedBox(height: 20),
-                    InkWell(
-                      onTap: _onNextStep,
-                      child: Container(
-                        width: double.infinity,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: Common.secondary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Center(
-                          child: Text(
-                            "Continue to next step",
-                            style: TextStyle(
-                              fontFamily: 'bold',
-                              fontSize: Common.h2,
-                              fontWeight: Common.weight2,
-                              color: Common.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: 15),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Color(0xFFF4F2F2),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
-                        "Your information is safe and will be used only to provide service.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontFamily: 'bold',
-                          fontSize: Common.h4,
-                          fontWeight: Common.weight,
-                          color: Common.light,
-                        ),
-                      ),
-                    ),
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black,
+                    Common.background
                   ],
                 ),
               ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: Center(
+                  child: Card(
+                    elevation: 4,
+                    color: Common.primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "Enter your details",
+                            style: TextStyle(
+                              fontFamily: 'bold',
+                              fontSize: 20,
+                              fontWeight: Common.weight,
+                              color: Common.secondary,
+                            ),
+                          ),
+                          SizedBox(height: 20),
+                          _buildTextField(_nameController, "Name"),
+                          SizedBox(height: 15),
+                          _buildTextField(
+                            _phoneController,
+                            "Phone number",
+                            keyboardType: TextInputType.phone,
+                            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
+                          ),
+                          SizedBox(height: 15),
+                          Row(
+                            children: [
+                              Expanded(child: _buildDropdown("Select city", cities, _selectedCity, (value) {
+                                setState(() => _selectedCity = value);
+                              })),
+                              SizedBox(width: 10),
+                              Expanded(child: _buildDropdown("Select vehicle", vehicles, _selectedVehicle, (value) {
+                                setState(() => _selectedVehicle = value);
+                              })),
+                            ],
+                          ),
+                          SizedBox(height: 20),
+                          InkWell(
+                            onTap: _onNextStep,
+                            child: Container(
+                              width: double.infinity,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: Common.secondary,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  "Continue to next step",
+                                  style: TextStyle(
+                                    fontFamily: 'bold',
+                                    fontSize: Common.h2,
+                                    fontWeight: Common.weight2,
+                                    color: Common.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 15),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Color(0xFFF4F2F2),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              "Your information is safe and will be used only to provide service.",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontFamily: 'bold',
+                                fontSize: Common.h4,
+                                fontWeight: Common.weight,
+                                color: Common.light,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
+            Positioned(
+              top: 16,
+              left: 16,
+              child: InkWell(
+                onTap: () {
+                  Navigator.of(context).pop();
+                },
+                borderRadius: BorderRadius.circular(30),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Common.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.arrow_back, color: Common.primary, size: 20),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

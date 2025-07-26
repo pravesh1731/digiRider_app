@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBY7tt7b-pMYVNt5erAjNcyZ9EmbI2vw_o',
-    appId: '1:43638107391:android:644d00134eb4d1a40bf0ca',
+    appId: '1:43638107391:android:e8b43666156e3a6e0bf0ca',
     messagingSenderId: '43638107391',
     projectId: 'humans-of-rural-india-d2b22',
     storageBucket: 'humans-of-rural-india-d2b22.appspot.com',

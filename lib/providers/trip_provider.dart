@@ -9,6 +9,31 @@ class TripProvider with ChangeNotifier {
   TripStage? get currentStage => _currentStage;
   String? get currentTripId => _currentTripId;
 
+  int _activeOrdersCount = 0;
+  int get activeOrdersCount => _activeOrdersCount;
+
+  Future<void> incrementActiveOrders() async {
+    _activeOrdersCount++;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('active_orders_count', _activeOrdersCount);
+  }
+
+  Future<void> decrementActiveOrders() async {
+    if (_activeOrdersCount > 0) {
+      _activeOrdersCount--;
+      notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('active_orders_count', _activeOrdersCount);
+    }
+  }
+
+  Future<void> loadActiveOrdersCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    _activeOrdersCount = prefs.getInt('active_orders_count') ?? 0;
+    notifyListeners();
+  }
+
   Future<void> loadTripStage(String tripId) async {
     final prefs = await SharedPreferences.getInstance();
     final stageIndex = prefs.getInt('trip_stage_$tripId');

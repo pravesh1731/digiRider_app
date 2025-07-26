@@ -151,18 +151,50 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:43638107391:android:644d00134eb4d1a40bf0ca",
+        "mobilesdk_app_id": "1:43638107391:android:e8b43666156e3a6e0bf0ca",
         "android_client_info": {
-          "package_name": "com.example.digirider"
+          "package_name": "com.digistall.rider"
         }
       },
       "oauth_client": [
         {
-          "client_id": "43638107391-46lppmpengk61j8mt9569suj10jj671k.apps.googleusercontent.com",
+          "client_id": "43638107391-2hel05r8tf25dn7es5r0ieod0bmom0f3.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.example.digirider",
-            "certificate_hash": "b096990a5d2bb14cc7f84ea9e902f5216552e231"
+            "package_name": "com.digistall.rider",
+            "certificate_hash": "da883bf0efdae50cd5f4ee78ceccf2a3ecf47d1d"
+          }
+        },
+        {
+          "client_id": "43638107391-8kv5v3oia86st1ljk908it8pjfgq2dc6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.digistall.rider",
+            "certificate_hash": "ca36f9c9271d906b5c2362ad788b645ab339871e"
+          }
+        },
+        {
+          "client_id": "43638107391-agar8h3mjkpsoalsmsa90uealqeegdjo.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.digistall.rider",
+            "certificate_hash": "1401197aa2f8f7e334a75936156f9f628b6ccf6a"
+          }
+        },
+        {
+          "client_id": "43638107391-m3v95r186lfdds0i64p05v4jnm3aanah.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.digistall.rider",
+            "certificate_hash": "751bef9b1d0d4706acd4854826a45e48d5bb417c"
+          }
+        },
+        {
+          "client_id": "43638107391-t9lm310d9qdv05s2v0m3nohrjnlslq5a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.digistall.rider",
+            "certificate_hash": "161fb8a92fab50be10dcf7687f69c9589df84b84"
           }
         },
         {

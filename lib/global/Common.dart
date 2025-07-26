@@ -4,6 +4,7 @@ class Common{
 
   static String baseUrl = 'https://gotanbackend.digistall.in/';
   static Color background = Color(0xFFEFEBE8);
+  // static Color background = Colors.blue;
   static Color primary = Colors.white;
   static Color secondary = Colors.black;
   static Color light = Colors.grey;

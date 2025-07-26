@@ -1,20 +1,34 @@
+import 'dart:convert';
+
 import 'package:digirider/NavMain.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import 'package:http/http.dart' as http;
 import '../global/Common.dart';
 import '../model/trip_stage.dart';
 import '../providers/trip_provider.dart';
+import '../utils/_TimedSnackBar.dart';
+import '../utils/bottomSnackBar.dart';
 
 class TripFlowPage extends StatefulWidget {
   final String tripId;
+  final String endpointPost;
+  final Map<String, dynamic> order;
 
-  const TripFlowPage({super.key, required this.tripId});
+  const TripFlowPage({
+    super.key,
+    required this.tripId,
+    required this.order,
+    required this.endpointPost,
+  });
 
   @override
   State<TripFlowPage> createState() => _TripFlowPageState();
@@ -22,50 +36,150 @@ class TripFlowPage extends StatefulWidget {
 
 class _TripFlowPageState extends State<TripFlowPage> {
   // TripStage currentStage = TripStage.reachPickup;
+  bool _isLoading = false;
+  late TextEditingController _otpController;
 
   @override
   void initState() {
     super.initState();
+    _otpController = TextEditingController();
     // _loadStage();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<TripProvider>(context, listen: false)
-          .loadTripStage(widget.tripId);
+      Provider.of<TripProvider>(
+        context,
+        listen: false,
+      ).loadTripStage(widget.tripId);
     });
-
   }
 
+  @override
+  void dispose() {
+    _otpController.dispose();
+    super.dispose();
+  }
 
-  Future<bool> _callStageApi() async {
+  Future<bool> _callStageApi(TripStage? currentStage) async {
     try {
-      // Simulate API delay
-      await Future.delayed(Duration(seconds: 1));
+      final url = Uri.parse('${Common.baseUrl}${widget.endpointPost}');
+      Map<String, dynamic> payload;
 
-      return true; // simulate success
+      switch (currentStage) {
+        case TripStage.readyToStart:
+          payload = {
+            "orderId": widget.order['_id'],
+            "riderStatus": "In Transit",
+            "email": widget.order['riderDetails'][0]['email'],
+            if (widget.endpointPost != 'api/digiorder/setorderStatus')
+              "sellerPhone": widget.order['sellerPhone'],
+            if (widget.endpointPost != 'api/digiorder/setorderStatus')
+              "userOtp": _otpController.text.trim(),
+          };
+          break;
+
+        case TripStage.inProgress:
+          payload = {
+            "orderId": widget.order['_id'],
+            "riderStatus": "Delivered",
+            "email": widget.order['riderDetails'][0]['email'],
+            if (widget.endpointPost != 'api/digiorder/setorderStatus')
+              "sellerPhone": widget.order['sellerPhone'],
+          };
+          break;
+
+        default:
+          // Optionally handle other cases (e.g., TripStage.reachPickup)
+          payload = {
+            // "orderId": widget.order['_id'],
+            // "riderStatus": "UnknownStage",
+          };
+          break;
+      }
+
+      if (currentStage == TripStage.reachPickup) {
+        showTimedSnackBar(
+          context,
+          'Pickup Location Arrived.',
+          Duration(seconds: 2),
+          'top',
+        );
+        return true;
+      }
+
+      final response = await http.post(
+        url,
+        body: jsonEncode(payload),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      // print("url: ${url}");
+      // print("payload: ${payload}");
+      // print("API Response: ${response.statusCode} - ${response.body}");
+
+      if (response.statusCode != 200) {
+        final res = jsonDecode(response.body);
+        getSnackBar(
+          context,
+          res['message'] ?? "Action failed. Please try again.",
+          Colors.orange,
+          2,
+        );
+        return false;
+      }
+
+      if (currentStage == TripStage.readyToStart) {
+        showTimedSnackBar(
+          context,
+          'Trip Started Successfully.',
+          Duration(seconds: 2),
+          'top',
+        );
+        return true;
+      }
+
+      if (currentStage == TripStage.inProgress) {
+        // final tripProvider = Provider.of<TripProvider>(context, listen: false);
+        // await tripProvider.decrementActiveOrders();
+        showTimedSnackBar(
+          context,
+          'Trip Completed Successfully.',
+          Duration(seconds: 2),
+          'top',
+        );
+        return true;
+      }
+
+      return true;
     } catch (e) {
       print('API Error: $e');
+      getSnackBar(context, "Something went wrong.", Colors.red, 2);
       return false;
     }
   }
 
   Future<void> _nextStage() async {
     final tripProvider = Provider.of<TripProvider>(context, listen: false);
-    bool success = await _callStageApi();
+    final currentStage = tripProvider.currentStage;
+
+    bool success = await _callStageApi(currentStage);
+    setState(() => _isLoading = false);
 
     if (!success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Action failed. Please try again.')),
-      );
       return;
     }
 
-    await Navigator.of(context).push(PageRouteBuilder(
-      opaque: false,
-      barrierDismissible: false,
-      pageBuilder: (_, __, ___) => const _SuccessOverlay(),
-    ));
+    // Success overlay
+    await Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: false,
+        pageBuilder: (_, __, ___) => const _SuccessOverlay(),
+      ),
+    );
 
-    // Handle stage transition
-    if (tripProvider.currentStage == TripStage.inProgress) {
+    if (currentStage == TripStage.inProgress) {
+      final tripProvider = Provider.of<TripProvider>(context, listen: false);
+      await tripProvider.decrementActiveOrders();
+
       await tripProvider.completeTrip();
       Navigator.pushReplacement(
         context,
@@ -75,104 +189,236 @@ class _TripFlowPageState extends State<TripFlowPage> {
     }
 
     TripStage? nextStage;
-    switch (tripProvider.currentStage) {
+    switch (currentStage) {
       case TripStage.reachPickup:
         nextStage = TripStage.readyToStart;
         break;
-      // case TripStage.readyToStart:
-      //   nextStage = TripStage.confirmOtp;
-      //   break;
-      // case TripStage.confirmOtp:
-      //   nextStage = TripStage.inProgress;
-      //   break;
       case TripStage.readyToStart:
         nextStage = TripStage.inProgress;
         break;
       case TripStage.inProgress:
-      // Already handled above
+        // Already handled above
         break;
       case null:
-      // Optional: log or handle null case safely
         debugPrint("Current stage is null");
         break;
     }
-
 
     if (nextStage != null) {
       await tripProvider.updateTripStage(nextStage);
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Consumer<TripProvider>(
-        builder: (context, tripProvider, child) {
-          final currentStage = tripProvider.currentStage ?? TripStage.reachPickup;
+      builder: (context, tripProvider, child) {
+        final currentStage = tripProvider.currentStage ?? TripStage.reachPickup;
 
-          return Scaffold(
-            appBar: AppBar(
-              toolbarHeight: 60,
-              leading: Padding(
-                padding: const EdgeInsets.only(left: 8.0),
-                child: Container(
-                  child: Center(
-                    child: SvgPicture.asset(
-                      'assets/Icons/truck.svg',
-                      color: Common.primary,
-                      width: 25,
-                      height: 25,
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarIconBrightness: Brightness.light,
+            statusBarColor: Common.secondary,
+          ),
+          child: GestureDetector(
+            onTap: () => {FocusManager.instance.primaryFocus?.unfocus()},
+            child: Scaffold(
+              appBar: AppBar(
+                backgroundColor: Common.secondary,
+                toolbarHeight: 60,
+                leading: Padding(
+                  padding: const EdgeInsets.only(left: 8.0),
+                  child: Container(
+                    child: Center(
+                      child: SvgPicture.asset(
+                        'assets/Icons/truck.svg',
+                        color: Common.primary,
+                        width: 25,
+                        height: 25,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 15.0),
-                  child: Image.asset('assets/Icons/refresh.png', width: 20, height: 20,),
-                ),
-              ],
-              title: Text(_getAppBarTitle(currentStage), style: TextStyle(fontSize: Common.title, fontFamily: Common.family),),
-            ),
-
-            body: Padding(
-              padding: const EdgeInsets.only(right: 12.0, left: 12.0, top: 12, bottom: 20),
-              child: Column(
-                children: [
-                  _buildContactCard(),
-                  _buildLocationCard(),
-                  if(currentStage == TripStage.reachPickup || currentStage == TripStage.inProgress)
-                  _buildGoogleMapsButton(),
-                  Spacer(),
-                  if(currentStage == TripStage.reachPickup)
-                  _buildCallCard(),
-                  SizedBox(height: 8,),
+                actions: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: SlideAction(
-                      sliderButtonIconPadding: 5,
-                      sliderButtonIconSize: 20,
-                      sliderButtonYOffset: 10,
-                      onSubmit: () {
-                        Future.delayed(Duration(milliseconds: 200), () {
-                          _nextStage();
-                        });
-                      },
-                      height: 45,
-                      sliderRotate: false,
-                      innerColor: Common.primary, // Colors Inside
-                      outerColor: Common.secondary, // Track and submitted Color
-                      elevation: 5,
-                      borderRadius: 30,
-                      alignment: Alignment.center,
-                      child: Text(_getBottomActionText(currentStage), style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Common.primary)), // You can add a text to the action
+                    padding: const EdgeInsets.only(right: 15.0),
+                    child: Image.asset(
+                      'assets/Icons/refresh.png',
+                      width: 20,
+                      height: 20,
                     ),
                   ),
                 ],
+                title: Text(
+                  _getAppBarTitle(currentStage),
+                  style: TextStyle(
+                    fontSize: Common.title,
+                    fontFamily: Common.family,
+                  ),
+                ),
+              ),
+
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildLocationCard(order: widget.order, endpointPost: widget.endpointPost),
+                            _buildContactCard(order: widget.order, endpointPost: widget.endpointPost,),
+                            if (currentStage == TripStage.reachPickup ||
+                                currentStage == TripStage.inProgress)
+                              _buildGoogleMapsButton(
+                                order: widget.order,
+                                stage: currentStage,
+                              ),
+                            if (currentStage == TripStage.readyToStart &&
+                                widget.endpointPost !=
+                                    'api/digiorder/setorderStatus')
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Card(
+                                      elevation: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Theme(
+                                          data: Theme.of(context).copyWith(
+                                            textSelectionTheme:
+                                                TextSelectionThemeData(
+                                                  cursorColor: Common.secondary,
+                                                  selectionColor: Common
+                                                      .secondary
+                                                      .withOpacity(0.3),
+                                                  selectionHandleColor:
+                                                      Common.secondary,
+                                                ),
+                                          ),
+                                          child: TextField(
+                                            controller: _otpController,
+                                            style: TextStyle(
+                                              color: Common.secondary,
+                                              fontFamily: 'bold',
+                                              fontWeight: Common.weight,
+                                              fontSize: Common.h2,
+                                            ),
+                                            decoration: InputDecoration(
+                                              border: InputBorder.none,
+                                              hintText:
+                                                  'Enter Customer OTP here',
+                                              hintStyle: TextStyle(
+                                                color: Colors.grey,
+                                                fontFamily: 'bold',
+                                                fontWeight: Common.weight,
+                                                fontSize: Common.h2,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            const SizedBox(height: 12),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    /// --- Bottom Persistent Buttons ---
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 12,
+                        right: 12,
+                        bottom: 20,
+                      ),
+                      child: Column(
+                        children: [
+                          if (currentStage == TripStage.reachPickup)
+                            _buildCallCard(order: widget.order),
+                          const SizedBox(height: 6),
+                          _isLoading
+                              ? Container(
+                                height: 45,
+                                decoration: BoxDecoration(
+                                  color: Common.secondary,
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Common.primary,
+                                      strokeWidth: 2.5,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              : Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: SlideAction(
+                                  sliderButtonIconPadding: 5,
+                                  sliderButtonIconSize: 20,
+                                  sliderButtonYOffset: 14,
+                                  onSubmit: () async {
+                                    if (currentStage == TripStage.readyToStart && widget.endpointPost != 'api/digiorder/setorderStatus' && _otpController.text.trim().isEmpty) {
+                                      getSnackBar(context, "Please enter the customer OTP.", Colors.orange, 2,);
+                                      return;
+                                    }
+                                    Future.delayed(
+                                      const Duration(milliseconds: 10),
+                                      () {
+                                        setState(() => _isLoading = true);
+                                        _nextStage();
+                                      },
+                                    );
+                                  },
+                                  height: 45,
+                                  sliderRotate: false,
+                                  innerColor: Common.primary,
+                                  outerColor: Common.secondary,
+                                  elevation: 5,
+                                  borderRadius: 30,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    _getBottomActionText(currentStage),
+                                    style: TextStyle(
+                                      fontSize: Common.h2,
+                                      fontWeight: Common.weight,
+                                      color: Common.primary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          );
-      }
+          ),
+        );
+      },
     );
   }
 
@@ -201,34 +447,79 @@ class _TripFlowPageState extends State<TripFlowPage> {
         return "Trip In Progress";
     }
   }
-
 }
 
 class _buildCallCard extends StatelessWidget {
-  const _buildCallCard({
-    super.key,
-  });
+  final Map<String, dynamic> order;
+  const _buildCallCard({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: Colors.transparent,
-      elevation: 5,
-      child: Container(
-        height: 45,
-        width: double.infinity,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Common.secondary,
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset('assets/Icons/call.png', width: 15, height: 15, color: Color(0xFFFFFFFF),),
-            SizedBox(width: 30,),
-            Text('Call Customer', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h2, color: Common.primary),),
-          ],
+    return InkWell(
+      onTap: () async {
+        final phone = order['sellerPhone']?.toString().trim();
+
+        if (phone == null || phone.isEmpty) {
+          getSnackBar(
+            context,
+            "Seller phone number is missing.",
+            Colors.orange,
+            2,
+          );
+          // ScaffoldMessenger.of(context).showSnackBar(
+          //   const SnackBar(content: Text('Seller phone number is missing.')),
+          // );
+          return;
+        }
+
+        final url = Uri.parse('tel:$phone');
+
+        if (await canLaunchUrl(url)) {
+          await launchUrl(url);
+        } else {
+          getSnackBar(
+            context,
+            "Could not launch phone dialer.",
+            Colors.orange,
+            2,
+          );
+          // ScaffoldMessenger.of(context).showSnackBar(
+          //   const SnackBar(content: Text('Could not launch phone dialer.')),
+          // );
+        }
+      },
+
+      child: Card(
+        color: Colors.transparent,
+        elevation: 5,
+        child: Container(
+          height: 45,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Common.secondary,
+            borderRadius: BorderRadius.circular(30),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                'assets/Icons/call.png',
+                width: 15,
+                height: 15,
+                color: Color(0xFFFFFFFF),
+              ),
+              SizedBox(width: 30),
+              Text(
+                'Call Customer',
+                style: TextStyle(
+                  fontWeight: Common.weight,
+                  fontSize: Common.h2,
+                  color: Common.primary,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -236,29 +527,103 @@ class _buildCallCard extends StatelessWidget {
 }
 
 class _buildGoogleMapsButton extends StatelessWidget {
+  final Map<String, dynamic> order;
+  final TripStage stage;
   const _buildGoogleMapsButton({
     super.key,
+    required this.order,
+    required this.stage,
   });
+
+  String _getLaunchMapText(TripStage stage) {
+    switch (stage) {
+      case TripStage.reachPickup:
+        return "Navigate to Pickup";
+      case TripStage.inProgress:
+        return "Navigate to Destination";
+      default:
+        return "Trip Completed";
+      // case TripStage.confirmOtp:
+      //   return "Confirm OTP";
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 5,
-      child: Container(
-        height: 45,
-        width: double.infinity,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Common.secondary,
-          borderRadius: BorderRadius.circular(5),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Launch Google Maps', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h2, color: Common.primary),),
-            SizedBox(width: 20,),
-            SvgPicture.asset('assets/Icons/location.svg', width: 20, height: 20, color: Color(0xFFFFFFFF),),
-          ],
+    return InkWell(
+      onTap: () async {
+        try {
+          final pickup =
+              _getLaunchMapText(stage) == "Navigate to Pickup"
+                  ? order['pickupAddress']?.toString().trim()
+                  : order['deliveryAddress']?.toString().trim();
+
+          // Check if pickup or delivery is null or empty
+          if (pickup == null || pickup.isEmpty) {
+            getSnackBar(
+              context,
+              _getLaunchMapText(stage) == "Navigate to Pickup"
+                  ? 'Pickup address is missing.'
+                  : 'Destination address is missing.',
+              Colors.orange,
+              2,
+            );
+            // ScaffoldMessenger.of(context).showSnackBar(
+            //   const SnackBar(content: Text('Pickup address is missing.')),
+            // );
+            return;
+          }
+
+          // Try Google Maps navigation with destination only
+          final encodedPickup = Uri.encodeComponent(pickup);
+          final navigationUrl = Uri.parse(
+            "google.navigation:q=$encodedPickup&mode=d",
+          );
+
+          if (await canLaunchUrl(navigationUrl)) {
+            await launchUrl(
+              navigationUrl,
+              mode: LaunchMode.externalApplication,
+            );
+            return;
+          }
+        } catch (e) {
+          getSnackBar(context, 'Something went wrong.', Colors.orange, 2);
+          // ScaffoldMessenger.of(context).showSnackBar(
+          //   SnackBar(content: Text('Error: ${e.toString()}')),
+          // );
+        }
+      },
+      child: Card(
+        elevation: 5,
+        child: Container(
+          height: 45,
+          width: double.infinity,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Common.secondary,
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                _getLaunchMapText(stage),
+                style: TextStyle(
+                  fontWeight: Common.weight,
+                  fontSize: Common.h2,
+                  color: Common.primary,
+                ),
+              ),
+              SizedBox(width: 20),
+              SvgPicture.asset(
+                'assets/Icons/location.svg',
+                width: 20,
+                height: 20,
+                color: Color(0xFFFFFFFF),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -266,9 +631,46 @@ class _buildGoogleMapsButton extends StatelessWidget {
 }
 
 class _buildContactCard extends StatelessWidget {
-  const _buildContactCard({
-    super.key,
-  });
+  final Map<String, dynamic> order;
+  final String endpointPost;
+  const _buildContactCard({super.key, required this.order, required this.endpointPost});
+
+  String getFormattedDeliveryTime(Map<String, dynamic> order) {
+    final deliveryBy = order['deliveryBy'];
+    final deliveryTime = order['deliveryTime'];
+
+    if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
+      return 'Delivery time not set';
+    }
+
+    try {
+      final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
+      return DateFormat('dd MMM yyyy, hh:mm a').format(parsed); // Ex: 04 Jul 2025, 12:00 PM
+    } catch (e) {
+      return 'Invalid delivery time';
+    }
+  }
+
+  String formatIndianDate(String input) {
+    try {
+      // Parse the input string to DateTime
+      if (input == null || input.isEmpty) return 'Invalid Date';
+      final parsed = DateTime.tryParse(input);
+      if (parsed == null) return 'Invalid Date';
+
+      // Convert to local time if needed (optional)
+      final localTime = parsed.toLocal();
+
+      // Create a date formatter with the desired pattern
+      final formatter = DateFormat('dd MMM yyyy, hh:mm a');
+
+      // Format the date
+      return formatter.format(localTime);
+    } catch (e) {
+      debugPrint('Date formatting error: $e');
+      return 'Invalid Date';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -284,26 +686,355 @@ class _buildContactCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Contact Details', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h1, color: Common.secondary),),
-            Divider(),
-            SizedBox(height: 6,),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Name', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h2, color: Common.secondary),),
-                Text('Muralidharan U', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h2, color: Common.secondary),),
-              ],
-            ),
-            SizedBox(height: 6,),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Phone No.', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h2, color: Common.secondary),),
-                Text('9363509503', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h2, color: Common.secondary),),
+                // if(endpointPost=='api/parcel/setriderstatus')
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Text(
+                    'Order ID',
+                    style: TextStyle(
+                      fontSize: Common.h2,
+                      fontWeight: Common.weight2,
+                      color: Common.secondary,
+                      fontFamily: 'bold',
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                SizedBox(width: 10,),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      '#${order['_id']?.toString() ?? ''}',
+                      // '${getFormattedDeliveryTime(order)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: Common.weight2,
+                        color: Common.light,
+                        fontFamily: 'bold',
+                      ),
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                ),
               ],
             ),
 
 
+            Divider(color: Common.light, thickness: 0.3,),
+            SizedBox(height: 5),
+            // Divider(),
+            // SizedBox(height: 6),
+
+            if(endpointPost!='api/digiorder/setorderStatus')...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Name',
+                    style: TextStyle(
+                        fontWeight: Common.weight2,
+                        fontSize: Common.h2,
+                        color: Common.secondary,
+                        fontFamily: 'bold'
+                    ),
+                  ),
+                  SizedBox(width: 10,),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        (order['sellerName']?.toString().isNotEmpty ?? false)
+                            ? order['sellerName']
+                            : 'Not available',
+                        style: TextStyle(
+                            fontWeight: Common.weight2,
+                            fontSize: Common.h2,
+                            color: Common.light,
+                            fontFamily: 'bold'
+                        ),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Phone No.',
+                    style: TextStyle(
+                        fontWeight: Common.weight2,
+                        fontSize: Common.h2,
+                        color: Common.secondary,
+                        fontFamily: 'bold'
+                    ),
+                  ),
+                  SizedBox(height: 10,),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        (order['sellerPhone']?.toString().isNotEmpty ?? false)
+                            ? order['sellerPhone']
+                            : 'Not available',
+                        style: TextStyle(
+                            fontWeight: Common.weight2,
+                            fontSize: Common.h2,
+                            color: Common.light,
+                            fontFamily: 'bold'
+                        ),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 6,),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Distance',
+                    style: TextStyle(
+                        fontWeight: Common.weight2,
+                        fontSize: Common.h2,
+                        color: Common.secondary,
+                        fontFamily: 'bold'
+                    ),
+                  ),
+                  SizedBox(height: 10,),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        order['distance']?? 'Unknown',
+                        style: TextStyle(
+                            fontWeight: Common.weight2,
+                            fontSize: Common.h2,
+                            color: Common.light,
+                            fontFamily: 'bold'
+                        ),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if(endpointPost=='api/rider/setriderstatus')...[
+              SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Vehicle Type',
+                    style: TextStyle(
+                        fontWeight: Common.weight2,
+                        fontSize: Common.h2,
+                        color: Common.secondary,
+                        fontFamily: 'bold'
+                    ),
+                  ),
+                  SizedBox(height: 10,),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        (order['vehicleType']?? 'Unknown'),
+                        style: TextStyle(
+                            fontWeight: Common.weight2,
+                            fontSize: Common.h2,
+                            color: Common.light,
+                            fontFamily: 'bold'
+                        ),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Number of Passengers',
+                    style: TextStyle(
+                        fontWeight: Common.weight2,
+                        fontSize: Common.h2,
+                        color: Common.secondary,
+                        fontFamily: 'bold'
+                    ),
+                  ),
+                  SizedBox(height: 10,),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        textAlign: TextAlign.end,
+                        (order['numOfPassengers']?? 'Unknown'),
+                        style: TextStyle(
+                            fontWeight: Common.weight2,
+                            fontSize: Common.h2,
+                            color: Common.light,
+                            fontFamily: 'bold'
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if(endpointPost=='api/parcel/setriderstatus')...[
+              SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Parcel Message',
+                    style: TextStyle(
+                        fontWeight: Common.weight2,
+                        fontSize: Common.h2,
+                        color: Common.secondary,
+                        fontFamily: 'bold'
+                    ),
+                  ),
+                  SizedBox(width: 10,),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        order['message']?? 'Nil',
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                            fontWeight: Common.weight2,
+                            fontSize: Common.h2,
+                            color: Common.light,
+                            fontFamily: 'bold'
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Parcel Weight',
+                    style: TextStyle(
+                        fontWeight: Common.weight2,
+                        fontSize: Common.h2,
+                        color: Common.secondary,
+                        fontFamily: 'bold'
+                    ),
+                  ),
+                  SizedBox(height: 10,),
+                  Expanded(
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Text(
+                        (order['weight']?? 'Unknown'),
+                        style: TextStyle(
+                            fontWeight: Common.weight2,
+                            fontSize: Common.h2,
+                            color: Common.light,
+                            fontFamily: 'bold'
+                        ),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  endpointPost=='api/digiorder/setorderStatus'?
+                      'Total Value':
+                  'TOTAL',
+                  style: TextStyle(
+                      fontWeight: Common.weight2,
+                      fontSize: Common.h2,
+                      color: Common.secondary,
+                      fontFamily: 'bold'
+                  ),
+                ),
+                SizedBox(height: 10,),
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: Text(
+                      endpointPost=='api/digiorder/setorderStatus'?
+                      '${order['totalCartValue'].toString()} Rs.': '${order['expectedPrice']?? 'Unknown'} Rs.',
+                      style: TextStyle(
+                          fontWeight: Common.weight2,
+                          fontSize: Common.h2,
+                          color: Common.light,
+                          fontFamily: 'bold'
+                      ),
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  endpointPost=='api/digiorder/setorderStatus'?
+                      'Deliverd By':
+                  'Pickup Time',
+                  style: TextStyle(
+                      fontWeight: Common.weight2,
+                      fontSize: Common.h2,
+                      color: Common.secondary,
+                      fontFamily: 'bold'
+                  ),
+                ),
+                SizedBox(height: 10,),
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: Text(
+                      endpointPost=='api/digiorder/setorderStatus'?
+                      getFormattedDeliveryTime(order):
+                      formatIndianDate(order['pickupTime']?.toString() ?? ''),
+                      style: TextStyle(
+                          fontWeight: Common.weight2,
+                          fontSize: Common.h2,
+                          color: Common.light,
+                          fontFamily: 'bold'
+                      ),
+                      textAlign: TextAlign.end,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -312,9 +1043,9 @@ class _buildContactCard extends StatelessWidget {
 }
 
 class _buildLocationCard extends StatelessWidget {
-  const _buildLocationCard({
-    super.key,
-  });
+  final Map<String, dynamic> order;
+  final String endpointPost;
+  const _buildLocationCard({super.key, required this.order, required this.endpointPost});
 
   @override
   Widget build(BuildContext context) {
@@ -330,23 +1061,33 @@ class _buildLocationCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71),),
-                SizedBox(width: 16,),
-                Text('PICKUP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight),),
+                SvgPicture.asset(
+                  'assets/Icons/location.svg',
+                  width: 24,
+                  height: 24,
+                  color: Color(0xFF58DE71),
+                ),
+                SizedBox(width: 16),
+                Text(
+                  'PICKUP',
+                  style: TextStyle(
+                    fontSize: Common.h2,
+                    fontWeight: Common.weight,
+                    fontFamily: 'bold',
+                  ),
+                ),
               ],
             ),
-            SizedBox(height: 6,),
+            SizedBox(height: 6),
             IntrinsicHeight(
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start, // ensures vertical stretch
+                crossAxisAlignment:
+                    CrossAxisAlignment.start, // ensures vertical stretch
                 children: [
                   Container(
                     width: 24,
                     child: Center(
-                      child: Container(
-                        width: 1,
-                        color: Common.secondary,
-                      ),
+                      child: Container(width: 1, color: Common.secondary),
                     ),
                   ),
                   const SizedBox(width: 16), // optional spacing
@@ -354,34 +1095,59 @@ class _buildLocationCard extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
-                        '1234 Winding Creek Boulevard, Apt 208, Spring field, IL 62704, United States',
-                        style: TextStyle(fontSize: 12, fontWeight: Common.weight, color: Common.light),
+                        endpointPost=='api/digiorder/setorderStatus'?
+                            order['sellerAddress']?? 'Not Available':
+                        order['pickupAddress']?? 'Not Available',
+                        style: TextStyle(
+                          fontSize: Common.h2,
+                          fontWeight: Common.weight,
+                          color: Common.light,
+                        ),
                         softWrap: true,
                       ),
                     ),
                   ),
-                  SizedBox(width: 8,)
+                  SizedBox(width: 8),
                 ],
               ),
             ),
-            SizedBox(height: 6,),
+            SizedBox(height: 6),
             Row(
               children: [
-                SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFFED9D60),),
-                SizedBox(width: 16,),
-                Text('DROP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight),),
+                SvgPicture.asset(
+                  'assets/Icons/location.svg',
+                  width: 24,
+                  height: 24,
+                  color: Color(0xFFED9D60),
+                ),
+                SizedBox(width: 16),
+                Text(
+                  'DROP',
+                  style: TextStyle(
+                    fontSize: Common.h2,
+                    fontWeight: Common.weight,
+                    fontFamily: 'bold',
+                  ),
+                ),
               ],
             ),
-            SizedBox(height: 6,),
+            SizedBox(height: 6),
             Padding(
               padding: const EdgeInsets.only(left: 40.0, right: 8),
               child: Text(
-                '1234 Winding Creek Boulevard, Apt 208, Spring field, IL 62704, United States',
-                style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),
+                endpointPost=='api/digiorder/setorderStatus'?
+                    order['address']?? 'Not Available' :
+                (order['deliveryAddress']?.toString().isNotEmpty ?? false)
+                    ? order['deliveryAddress']
+                    : 'Not available',
+                style: TextStyle(
+                  fontSize: Common.h2,
+                  fontWeight: Common.weight,
+                  color: Common.light,
+                ),
                 softWrap: true,
               ),
             ),
-
           ],
         ),
       ),
@@ -407,21 +1173,19 @@ class _SuccessOverlayState extends State<_SuccessOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: Common.background,
-        systemOverlayStyle: SystemUiOverlayStyle(
-          statusBarColor: Colors.transparent, // ✅ match your intended color
-          statusBarIconBrightness: Brightness.dark,
-        ),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarIconBrightness: Brightness.dark,
+        statusBarColor: Common.background,
       ),
-      // backgroundColor: Colors.black.withOpacity(0.8),
-      body: Center(
-        child: SizedBox(
-          height: 200,
-          width: 200,
-          child: Lottie.asset('assets/animation/success.json'),
+      child: Scaffold(
+        // backgroundColor: Colors.black.withOpacity(0.8),
+        body: Center(
+          child: SizedBox(
+            height: 200,
+            width: 200,
+            child: Lottie.asset('assets/animation/success.json'),
+          ),
         ),
       ),
     );

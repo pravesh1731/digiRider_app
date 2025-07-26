@@ -144,31 +144,6 @@ class NotificationService {
     if (token != null) {
       print("🔑 FCM Token: $token");
       await saveFcmTokenLocally(token);
-
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? phoneNumber = prefs.getString('gotan_phone_number');
-
-      if (phoneNumber == null || phoneNumber.isEmpty) {
-        print("⚠️ Phone number not found in SharedPreferences.");
-        return;
-      }
-
-      try {
-        final response = await http.post(
-          Uri.parse("${Common.baseUrl}api/auth/authenticate"),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            "cityName": "Gotan",
-            "phoneNumber": phoneNumber,
-            "deviceToken": token,
-          }),
-        );
-
-        print("📬 Token update API response: ${response.statusCode} - ${response.body}");
-      } catch (e) {
-        print("❌ Failed to update token on server: $e");
-        // Optionally show a toast or store this to retry later
-      }
     }
   }
 
