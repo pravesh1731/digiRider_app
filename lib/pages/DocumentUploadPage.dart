@@ -135,7 +135,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => NavMain(initialIndex: 4),
+            builder: (context) => NavMain(initialIndex: 1),
           ),
         );
       } else {

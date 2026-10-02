@@ -28,74 +28,69 @@ class _HomePageState extends State<HomePage> {
   late String cityName;
   late String email;
   List<dynamic> _orders = [];
-  String selectedStatus = 'Rider Orders'; // default
+  // Removed selectedStatus and category logic
   bool _isLoading = true;
   String endpointPost = '';
   Timer? _timer;
+  final ScrollController _scrollController = ScrollController();
 
   void filterRidesAuto() async {
-    final filtered = await _fetchBookings(selectedStatus);
-
-    if (!mounted) return; // Prevents calling setState on disposed widget
-
+    final filtered = await _fetchAllBookings();
+    if (!mounted) return;
     setState(() {
-      _orders = filtered;
+      _orders = _sortOrdersByLatest(filtered);
     });
+    _scrollToTop();
   }
 
   void filterRides() async {
-    final filtered = await _fetchBookings(selectedStatus);
+    final filtered = await _fetchAllBookings();
     setState(() {
-      _orders = filtered;
+      _orders = _sortOrdersByLatest(filtered);
       _isLoading = false;
     });
+    _scrollToTop();
   }
 
-  Future<List<dynamic>> _fetchBookings(String status) async {
-    await _loadSharedPrefs(); // load email, city, etc.
+  List<dynamic> _sortOrdersByLatest(List<dynamic> orders) {
+    orders.sort((a, b) {
+      final aTime = DateTime.tryParse(a['pickupTime'] ?? a['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = DateTime.tryParse(b['pickupTime'] ?? b['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
+    return orders;
+  }
 
-    // String endpoint = '';
-    const orderKey = 'data'; // All APIs use 'data' key
+  Future<List<dynamic>> _fetchAllBookings() async {
+    await _loadSharedPrefs();
+    const orderKey = 'data';
     Map<String, dynamic> payload = {'email': email};
-
-    // Set the endpoint based on status
-    String endpoint = '';
-    if (status == 'Rider Orders') {
-      endpoint = 'api/rider/riderorderhistory';
-      endpointPost = 'api/rider/setriderstatus';
-    } else if (status == 'Parcel Orders') {
-      endpointPost = 'api/parcel/setriderstatus';
-      endpoint = 'api/parcel/riderorderhistory';
-    } else if (status == 'Digistall Orders') {
-      endpointPost = 'api/digiorder/setorderStatus';
-      endpoint = 'api/digiorder/orderStatus';
-    } else {
-      debugPrint('❌ Unknown status: $status');
-      return [];
-    }
-
-    final url = Uri.parse('${Common.baseUrl}$endpoint');
-
-    final response = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final orders = data[orderKey];
-
-      if (orders is List) {
-        return orders;
-      } else {
-        debugPrint('⚠️ "$orderKey" is not a List or missing.');
-        return [];
+    final endpoints = [
+      {'endpoint': 'api/rider/riderorderhistory', 'type': 'Rider Orders', 'post': 'api/rider/setriderstatus'},
+      {'endpoint': 'api/parcel/riderorderhistory', 'type': 'Parcel Orders', 'post': 'api/parcel/setriderstatus'},
+      {'endpoint': 'api/digiorder/orderStatus', 'type': 'Digistall Orders', 'post': 'api/digiorder/setorderStatus'},
+    ];
+    List<dynamic> allOrders = [];
+    for (var ep in endpoints) {
+      final url = Uri.parse('${Common.baseUrl}${ep['endpoint']}');
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(payload),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final orders = data[orderKey];
+        if (orders is List) {
+          for (var o in orders) {
+            o['orderType'] = ep['type'];
+            o['endpointPost'] = ep['post'];
+            allOrders.add(o);
+          }
+        }
       }
-    } else {
-      debugPrint('❌ API error ${response.statusCode}: ${response.body}');
-      return [];
     }
+    return allOrders;
   }
 
   Future<void> _loadSharedPrefs() async {
@@ -167,15 +162,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _scrollToTop() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
+  }
+
   @override
   void initState() {
     super.initState();
-    _fetchBookings(selectedStatus).then((orders) {
+    _fetchAllBookings().then((orders) {
       setState(() {
-        print(orders);
-        _orders = orders;
+        _orders = _sortOrdersByLatest(orders);
         _isLoading = false;
       });
+      _scrollToTop();
     });
     _timer = Timer.periodic(Duration(seconds: 5), (timer) {
       filterRidesAuto();
@@ -277,6 +280,7 @@ class _HomePageState extends State<HomePage> {
       onWillPop: () => showExitConfirmationDialog(context),
       child: Scaffold(
         appBar: AppBar(
+          backgroundColor: Common.secondary,
           toolbarHeight: 60,
           leading: Padding(
             padding: const EdgeInsets.only(left: 8.0),
@@ -312,7 +316,7 @@ class _HomePageState extends State<HomePage> {
           ],
           title: Text(
             'Home',
-            style: TextStyle(fontSize: Common.title, fontFamily: Common.family),
+            style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color: Common.primary),
           ),
         ),
         body: Container(
@@ -320,18 +324,7 @@ class _HomePageState extends State<HomePage> {
             padding: const EdgeInsets.only(right: 12.0, left: 12.0, top: 8),
             child: Column(
               children: [
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      buildStatusFilterButton('Rider Orders'),
-                      buildStatusFilterButton('Parcel Orders'),
-                      buildStatusFilterButton('Digistall Orders'),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 5),
+                // Removed category filter buttons
                 Expanded(
                   child:
                       _isLoading
@@ -380,20 +373,25 @@ class _HomePageState extends State<HomePage> {
                               filterRides();
                             },
                             child: ListView.builder(
+                              controller: _scrollController,
                               itemCount: _orders.length + 1,
                               itemBuilder: (context, index) {
                                 if (index == _orders.length)
                                   return const SizedBox(height: 8);
                                 final order = _orders[index];
-                                return selectedStatus == 'Digistall Orders'
-                                    ? _DigistallOrderCard(
-                                      order: order,
-                                      endpointPost: endpointPost,
-                                    )
-                                    : _OrderCard(
-                                      order: order,
-                                      endpointPost: endpointPost,
-                                    );
+                                if (order['orderType'] == 'Digistall Orders') {
+                                  return _DigistallOrderCard(
+                                    order: order,
+                                    endpointPost: order['endpointPost'] ?? '',
+                                  );
+                                } else if (order['orderType'] == 'Rider Orders' || order['orderType'] == 'Parcel Orders') {
+                                  return _OrderCard(
+                                    order: order,
+                                    endpointPost: order['endpointPost'] ?? '',
+                                  );
+                                } else {
+                                  return SizedBox.shrink();
+                                }
                               },
                             ),
                           ),
@@ -406,32 +404,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget buildStatusFilterButton(String status) {
-    final isSelected = selectedStatus == status;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(status),
-        selected: isSelected,
-        onSelected: (_) {
-          setState(() {
-            _isLoading = true;
-            selectedStatus = status;
-          });
-          filterRides();
-        },
-        checkmarkColor: Common.primary, // ✅ Changes the tick/check color
-        selectedColor: Common.secondary,
-        labelStyle: TextStyle(
-          color: isSelected ? Common.primary : Common.secondary,
-          fontFamily: Common.family,
-          fontSize: Common.h3,
-          fontWeight: Common.weight,
-        ),
-        backgroundColor: Common.primary,
-      ),
-    );
-  }
+  // Removed buildStatusFilterButton
 }
 
 class _DigistallOrderCard extends StatelessWidget {
@@ -440,11 +413,39 @@ class _DigistallOrderCard extends StatelessWidget {
   // });
   final Map<String, dynamic> order;
   final String endpointPost;
+  // Commission is derived from coupontotal (String) - totalCartValue (int)
+
   const _DigistallOrderCard({
     Key? key,
     required this.order,
     required this.endpointPost,
   }) : super(key: key);
+
+  int _getCartValue() {
+    final value = order['totalCartValue'];
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  String _getCouponTotal() {
+    final couponTotal = order['coupontotal'];
+    if (couponTotal is String) return couponTotal;
+    if (couponTotal is int) return couponTotal.toString();
+    // Fallbacks similar to IncomingBookingPage
+    final expectedPrice = order['expectedPrice'];
+    if (expectedPrice is int) return expectedPrice.toString();
+    if (expectedPrice is String) return expectedPrice;
+    final adminCommission = order['adminCommission'];
+    final cart = _getCartValue();
+    if (adminCommission is int) return (cart + adminCommission).toString();
+    if (adminCommission is String) {
+      final admin = int.tryParse(adminCommission) ?? 0;
+      return (cart + admin).toString();
+    }
+    return cart.toString();
+  }
+
   String formatIndianDate(String input) {
     try {
       // Parse the input string to DateTime
@@ -485,6 +486,15 @@ class _DigistallOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cartValue = _getCartValue();
+    final couponTotalStr = _getCouponTotal();
+    int commission = 0;
+    try {
+      commission = int.parse(couponTotalStr) - cartValue;
+    } catch (_) {
+      commission = 0;
+    }
+    final total = cartValue + commission;
     return Consumer<TripProvider>(
       builder: (context, tripProvider, child) {
         return Card(
@@ -497,12 +507,12 @@ class _DigistallOrderCard extends StatelessWidget {
             ),
             child: Column(
               children: [
-                // Align(
-                //   // child: Text(formatIndianDate(order['pickupTime']?.toString() ?? ''), style: TextStyle(fontSize: 12, fontWeight: Common.weight, color: Common.secondary),),
-                //   alignment: Alignment.topRight,
-                // ),
                 Row(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12.0),
+                      child: OrderTypeIcon(orderType: 'Digistall Orders'),
+                    ),
                     // if(endpointPost=='api/parcel/setriderstatus')
                     Align(
                       alignment: Alignment.topRight,
@@ -695,12 +705,22 @@ class _DigistallOrderCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 3),
+                          // Show cart value + commission = coupon total
                           Text(
-                            '₹${order['totalCartValue'] ?? '0'}',
+                            '₹$cartValue + ₹$commission = ₹$couponTotalStr',
                             style: TextStyle(
                               fontSize: Common.h2,
                               fontWeight: Common.weight,
                               color: Colors.green,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Total: ₹$total',
+                            style: TextStyle(
+                              fontSize: Common.h3,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue[800],
                             ),
                           ),
                         ],
@@ -834,6 +854,12 @@ class _OrderCard extends StatelessWidget {
     }
   }
 
+  String _getOrderType(String endpointPost) {
+    if (endpointPost == 'api/rider/setriderstatus') return 'Rider Orders';
+    if (endpointPost == 'api/parcel/setriderstatus') return 'Parcel Orders';
+    if (endpointPost == 'api/digiorder/setorderStatus') return 'Digistall Orders';
+    return '';
+  }
   @override
   Widget build(BuildContext context) {
     return Consumer<TripProvider>(
@@ -850,6 +876,10 @@ class _OrderCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12.0),
+                      child: OrderTypeIcon(orderType: _getOrderType(endpointPost)),
+                    ),
                     // if(endpointPost=='api/parcel/setriderstatus')
                     Align(
                       alignment: Alignment.topRight,
@@ -884,91 +914,7 @@ class _OrderCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                // SizedBox(height: 15),
-                // Row(
-                //   mainAxisAlignment: MainAxisAlignment.start,
-                //   children: [
-                //     Expanded(
-                //       flex: 4,
-                //       child: Row(
-                //         children: [
-                //           Container(
-                //             padding: EdgeInsets.only(left: 8, right: 6, top: 10, bottom: 10),
-                //             decoration: BoxDecoration(
-                //               shape: BoxShape.circle,
-                //               color: Color(0xFF5BA2FF),
-                //             ),
-                //             child: Image.asset('assets/Icons/user2.png', width: 12, height: 12,),),
-                //           SizedBox(width: 14,),
-                //           Column(
-                //             crossAxisAlignment: CrossAxisAlignment.start,
-                //             children: [
-                //               Text(
-                //                 'NAME',
-                //                 style: TextStyle(
-                //                   fontSize: Common.h2,
-                //                   fontWeight: Common.weight2,
-                //                   fontFamily: 'bold',
-                //                 ),
-                //               ),
-                //               SizedBox(height: 2),
-                //               Text(
-                //                 order['sellerName'] ?? 'Unknown',
-                //                 style: TextStyle(
-                //                   fontSize: 13,
-                //                   fontWeight: Common.weight,
-                //                   color: Common.light,
-                //                 ),
-                //               ),
-                //             ],
-                //           ),
-                //         ],
-                //       ),
-                //     ),
-                //     // Spacer(),
-                //     Expanded(
-                //       flex: 4,
-                //       child: Row(
-                //         children: [
-                //           Container(
-                //             padding: EdgeInsets.all(7),
-                //             decoration: BoxDecoration(
-                //               shape: BoxShape.circle,
-                //               color: Color(0xFF58DE71),
-                //             ),
-                //             child: Image.asset('assets/Icons/call.png', width: 11, height: 11,),
-                //           ),
-                //           SizedBox(width: 14,),
-                //           Column(
-                //             crossAxisAlignment: CrossAxisAlignment.start,
-                //             children: [
-                //               Text(
-                //                 'CONTACT',
-                //                 style: TextStyle(
-                //                   fontSize: Common.h2,
-                //                   fontWeight: Common.weight2,
-                //                   fontFamily: 'bold',
-                //                 ),
-                //               ),
-                //               SizedBox(height: 2),
-                //               Text(
-                //                 order['sellerPhone'] ?? 'Unknown',
-                //                 style: TextStyle(
-                //                   fontSize: 12,
-                //                   fontWeight: Common.weight,
-                //                   color: Common.light,
-                //                 ),
-                //               ),
-                //             ],
-                //           ),
-                //         ],
-                //       ),
-                //     ),
-                //   ],
-                // ),
-                // SizedBox(height: 0),
-                // Divider(color: Common.light, thickness: 0.09,),
-                // SizedBox(height: 5),
+                
                 Divider(color: Common.light, thickness: 0.09,),
                 SizedBox(height: 5),
 
@@ -1426,6 +1372,26 @@ class _SpinningLottieState extends State<SpinningLottie>
       'assets/animation/progress.json',
       controller: _controller,
     );
+  }
+}
+
+// Widget to show the correct icon for Rider, Parcel, or Digistall order
+class OrderTypeIcon extends StatelessWidget {
+  final String orderType;
+  const OrderTypeIcon({Key? key, required this.orderType}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    switch (orderType) {
+      case 'Rider Orders':
+        return SvgPicture.asset('assets/Icons/bike-svgrepo-com.svg', width: 28, height: 28, color: Color(0xFF008BE1));
+      case 'Parcel Orders':
+        return Image.asset('assets/Icons/activity.png', width: 28, height: 28, color: Color(0xFF58DE71));
+      case 'Digistall Orders':
+        return SvgPicture.asset('assets/Icons/store-svgrepo-com.svg', width: 28, height: 28, color: Colors.green);
+      default:
+        return Icon(Icons.local_shipping, size: 28);
+    }
   }
 }
 

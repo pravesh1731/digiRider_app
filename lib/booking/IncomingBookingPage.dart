@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
+import '../global/OrderTypeIcon.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
@@ -27,98 +28,176 @@ class IncomingBookingPage extends StatefulWidget {
 
 class _IncomingBookingPageState extends State<IncomingBookingPage> {
 
-  late String vehicleType;
-  late String cityName;
-  late String name;
-  late String email;
-  late String phoneNumber;
-  late String riderDomain;
-  late String uniqueRiderOtp;
-  late String userStatus;
-  late String active;
-  late String riderId;
-  late String licence;
-  late String qrcode;
+  String vehicleType = '';
+  String cityName = '';
+  String name = '';
+  String email = '';
+  String phoneNumber = '';
+  String riderDomain = '';
+  String uniqueRiderOtp = '';
+  String userStatus = '';
+  String active = '';
+  String riderId = '';
+  String licence = '';
+  String qrcode = '';
   List<dynamic> _orders = [];
-  String selectedStatus = 'Rider Orders'; // default
   bool _isLoading = true;
-  String endpointPost = '';
   Timer? _timer;
 
+  // Commission is now always calculated from coupontotal and totalCartValue in the order data
+
   void filterRidesAuto() async {
-    final filtered = await _fetchBookings(selectedStatus);
-
-    if (!mounted) return; // Prevents calling setState on disposed widget
-
+    final filtered = await _fetchAllBookings();
+    if (!mounted) return;
     setState(() {
-      _orders = filtered;
+      _orders = _sortOrdersByLatest(filtered);
     });
   }
 
 
-  void filterRides({bool delayed = false}) async {
+  void filterRides() async {
     setState(() {
       _isLoading = true;
     });
-
-    final filtered = await _fetchBookings(selectedStatus);
-
-    if (delayed) {
-      await Future.delayed(Duration(seconds: 1));
-    }
-
+    final filtered = await _fetchAllBookings();
     setState(() {
-      _orders = filtered;
+      _orders = _sortOrdersByLatest(filtered);
       _isLoading = false;
     });
   }
 
 
-  Future<List<dynamic>> _fetchBookings(String status) async {
+  Future<List<dynamic>> _fetchAllBookings() async {
     await _loadSharedPrefs();
-
-    String endpoint = '';
-    String order = '';
-    if (status == 'Rider Orders') endpoint = 'api/rider/dashboard?vehicleType=$vehicleType&cityName=$cityName';
-    else if (status == 'Parcel Orders') endpoint = 'api/parcel/dashboard?cityName=$cityName';
-    else if (status == 'Digistall Orders') endpoint = 'api/digiorder/getDigiOrder';
-
-    if (status == 'Rider Orders') order = 'filteredOrders';
-    else if (status == 'Parcel Orders') order = 'parcelOrders';
-    else if (status == 'Digistall Orders') order = 'DigiOrders';
-
-    if (status == 'Rider Orders') endpointPost = 'api/rider/acceptriderorder';
-    else if (status == 'Parcel Orders') endpointPost = 'api/parcel/acceptriderorder';
-    else if (status == 'Digistall Orders') endpointPost = 'api/digiorder/acceptedByRider';
-
-    final url = Uri.parse('${Common.baseUrl}${endpoint}');
-
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      print(data);
-      return data[order] ?? [];
-    } else {
-      throw Exception('Failed to load bookings');
+    print('=== FETCHING ORDERS FOR RIDER ===');
+    print('Rider VehicleType: $vehicleType');
+    print('Rider City: $cityName');
+    print('Rider Email: $email');
+    
+    final endpoints = [
+      {'endpoint': 'api/rider/dashboard?vehicleType=$vehicleType&cityName=$cityName', 'type': 'Rider Orders', 'order': 'filteredOrders', 'post': 'api/rider/acceptriderorder'},
+      {'endpoint': 'api/parcel/dashboard?cityName=$cityName', 'type': 'Parcel Orders', 'order': 'parcelOrders', 'post': 'api/parcel/acceptriderorder'},
+      {'endpoint': 'api/digiorder/getDigiOrder', 'type': 'Digistall Orders', 'order': 'DigiOrders', 'post': 'api/digiorder/acceptedByRider'},
+    ];
+    print('--- Fetching from ${endpoints.length} endpoints ---');
+    List<dynamic> allOrders = [];
+    for (var ep in endpoints) {
+      final url = Uri.parse('${Common.baseUrl}${ep['endpoint']}');
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final orders = data[ep['order']] ?? [];
+        for (var o in orders) {
+          print('OrderType:${ep['type']} | vehicleType:${o['vehicleType']} | _id:${o['_id']}');
+          o['orderType'] = ep['type'];
+          o['endpointPost'] = ep['post'];
+          allOrders.add(o);
+        }
+      }
     }
+    
+    // Filter orders based on rider's vehicle type using helper function
+    print('--- Filtering orders for vehicleType: $vehicleType ---');
+    allOrders = allOrders.where((order) => _shouldIncludeOrder(order)).toList();
+    
+    print('--- Final filtered orders count: ${allOrders.length} ---');
+    return allOrders;
+  }
+
+  List<dynamic> _sortOrdersByLatest(List<dynamic> orders) {
+    orders.sort((a, b) {
+      final aTime = DateTime.tryParse(a['pickupTime'] ?? a['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = DateTime.tryParse(b['pickupTime'] ?? b['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
+    return orders;
   }
 
 
 
   Future<void> _loadSharedPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    vehicleType = prefs.getString('vehicleType') ?? '';
-    cityName = prefs.getString('cityName') ?? '';
-    name = prefs.getString('name') ?? '';
-    email = prefs.getString('email') ?? '';
-    phoneNumber = prefs.getString('phoneNumber') ?? '';
-    riderDomain = prefs.getString('riderDomain') ?? '';
-    uniqueRiderOtp = prefs.getString('uniqueRiderOtp') ?? '';
-    userStatus = prefs.getString('userStatus') ?? '';
-    active = prefs.getString('active') ?? '';
-    riderId = prefs.getString('riderId') ?? '';
-    licence = prefs.getString('licence') ?? '';
-    qrcode = prefs.getString('qrcode') ?? '';
+  final prefs = await SharedPreferences.getInstance();
+  // Load actual values from SharedPreferences
+  vehicleType = prefs.getString('vehicleType') ?? 'Bike'; // Default to 'Bike' if not set
+  cityName = prefs.getString('cityName') ?? 'Gotan'; // Default to 'Gotan' if not set
+  name = prefs.getString('name') ?? '';
+  email = prefs.getString('email') ?? '';
+  phoneNumber = prefs.getString('phoneNumber') ?? '';
+  riderDomain = prefs.getString('riderDomain') ?? '';
+  uniqueRiderOtp = prefs.getString('uniqueRiderOtp') ?? '';
+  userStatus = prefs.getString('userStatus') ?? '';
+  final boolActive = prefs.getBool('active');
+  active = boolActive != null ? boolActive.toString() : '';
+  riderId = prefs.getString('riderId') ?? '';
+  licence = prefs.getString('licence') ?? '';
+  qrcode = prefs.getString('qrcode') ?? '';
+  
+  // Validate and log the loaded vehicle type
+  _validateVehicleType();
+  }
+  
+  void _validateVehicleType() {
+    if (vehicleType.isEmpty) {
+      print('🔄 VehicleType not loaded yet, skipping validation');
+      return;
+    }
+    
+    final validVehicleTypes = ['Bike', 'Auto', 'Car'];
+    if (!validVehicleTypes.contains(vehicleType)) {
+      print('⚠️  WARNING: Invalid vehicleType "$vehicleType". Valid types are: ${validVehicleTypes.join(", ")}');
+      print('⚠️  Defaulting to "Bike"');
+      vehicleType = 'Bike';
+    } else {
+      print('✅ Valid vehicleType detected: $vehicleType');
+    }
+  }
+  
+  bool _shouldIncludeOrder(Map<String, dynamic> order) {
+    final orderType = order['orderType'] as String?;
+    final orderVehicleType = order['vehicleType'] as String?;
+    
+    // If rider's vehicle type is not loaded yet, include all orders to avoid errors
+    if (vehicleType.isEmpty) {
+      print('🔄 VehicleType not loaded, including all orders temporarily');
+      return true;
+    }
+    
+    // Always include Digistall and Parcel orders for all riders
+    if (orderType == 'Digistall Orders' || orderType == 'Parcel Orders') {
+      print('✅ Including $orderType order: ${order['_id']} (always included)');
+      return true;
+    }
+    
+    // For Rider Orders, match vehicle type
+    if (orderType == 'Rider Orders') {
+      bool shouldInclude = (orderVehicleType == vehicleType);
+      String reason = shouldInclude 
+          ? 'vehicle types match' 
+          : 'vehicle type mismatch (order: $orderVehicleType, rider: $vehicleType)';
+      print('${shouldInclude ? '✅' : '❌'} Rider Order ${order['_id']}: $reason');
+      return shouldInclude;
+    }
+    
+    // Unknown order type - don't include
+    print('❌ Unknown order type "$orderType" for order: ${order['_id']}');
+    return false;
+  }
+  
+  Map<String, int> _getOrderTypeCounts() {
+    final counts = <String, int>{
+      'Rider Orders': 0,
+      'Parcel Orders': 0,
+      'Digistall Orders': 0,
+    };
+    
+    for (var order in _orders) {
+      final orderType = order['orderType'] as String?;
+      if (orderType != null && counts.containsKey(orderType)) {
+        counts[orderType] = counts[orderType]! + 1;
+      }
+    }
+    
+    return counts;
   }
 
   // Future<List<dynamic>> _fetchBookings() async {
@@ -137,12 +216,24 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
   @override
   void initState() {
     super.initState();
-    _fetchBookings(selectedStatus).then((orders) {
+    _initializeData();
+  }
+  
+  void _initializeData() async {
+    // Load shared preferences first
+    await _loadSharedPrefs();
+    
+    // Then fetch bookings
+    final orders = await _fetchAllBookings();
+    
+    if (mounted) {
       setState(() {
-        _orders = orders;
+        _orders = _sortOrdersByLatest(orders);
         _isLoading = false;
       });
-    });
+    }
+    
+    // Start periodic refresh
     _timer = Timer.periodic(Duration(seconds: 5), (timer) {
       filterRidesAuto();
     });
@@ -161,6 +252,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
       onWillPop: () => showExitConfirmationDialog(context),
       child: Scaffold(
         appBar: AppBar(
+          backgroundColor: Common.secondary,
           toolbarHeight: 60,
           leading: Padding(
             padding: const EdgeInsets.only(left: 8.0),
@@ -176,6 +268,24 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
             ),
           ),
           actions: [
+            // Debug info showing current rider's vehicle type
+            Container(
+              margin: EdgeInsets.only(right: 8),
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue, width: 1),
+              ),
+              child: Text(
+                vehicleType.isEmpty ? 'Loading...' : vehicleType,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
             GestureDetector(
               onTap: () async => {
                 setState(() {
@@ -185,30 +295,84 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
               },
               child: Padding(
                 padding: const EdgeInsets.only(right: 15.0),
-                child: Image.asset('assets/Icons/refresh.png', width: 20, height: 20,),
+                child: Image.asset('assets/Icons/refresh.png', width: 20, height: 20,color:Colors.white,),
               ),
             ),
           ],
-          title: Text('Incoming Bookings', style: TextStyle(fontSize: Common.title, fontFamily: Common.family),),
+          title: Text('Incoming Bookings', style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color:Colors.white,),),
         ),
         body: Container(
           child: Padding(
             padding: const EdgeInsets.only(right: 12.0, left: 12.0, top: 8),
             child: Column(
               children: [
-                SingleChildScrollView(
-                  // padding: EdgeInsets.zero, // Removes outer padding if any
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    children: [
-                      buildStatusFilterButton('Rider Orders'),
-                      buildStatusFilterButton('Parcel Orders'),
-                      buildStatusFilterButton('Digistall Orders'),
-                    ],
+                // Vehicle type info card
+                if (!_isLoading && vehicleType.isNotEmpty) 
+                  Container(
+                    width: double.infinity,
+                    margin: EdgeInsets.only(bottom: 12),
+                    padding: EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.directions_car, color: Colors.blue, size: 16),
+                            SizedBox(width: 8),
+                            Text(
+                              'Vehicle Type: $vehicleType',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[800],
+                                fontSize: 14,
+                              ),
+                            ),
+                            Spacer(),
+                            Text(
+                              '${_orders.length} orders',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                        SizedBox(height: 8),
+                        Row(
+                          children: _getOrderTypeCounts().entries.map((entry) {
+                            return Expanded(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${entry.value}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      color: Colors.blue[800],
+                                    ),
+                                  ),
+                                  Text(
+                                    entry.key.replaceAll(' Orders', ''),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.blue[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                SizedBox(height: 5),
+                // Removed status filter buttons
                 Expanded(
                   child: _isLoading
                       ? ListView.builder(
@@ -256,10 +420,10 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                       itemBuilder: (context, index) {
                         if (index == _orders.length) return const SizedBox(height: 8);
                         final order = _orders[index];
-                        if (selectedStatus == 'Digistall Orders') {
+                        if (order['orderType'] == 'Digistall Orders') {
                           return _DigistallOrderCard(
                             order: order,
-                            phoneNumber: phoneNumber, // e.g., from logged-in user or prefs
+                            phoneNumber: phoneNumber,
                             email: email,
                             name: name,
                             active: active,
@@ -271,13 +435,14 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                             uniqueRiderOtp: uniqueRiderOtp,
                             userStatus: userStatus,
                             vehicleType: vehicleType,
-                            endpointPost: endpointPost,
-                            onOrderAccepted: () async => filterRides(delayed: true),
+                            endpointPost: order['endpointPost'] ?? '',
+                            onOrderAccepted: () async => filterRides(),
+                            // commission is now calculated inside _DigistallOrderCard
                           );
                         } else {
                           return _OrderCard(
                             order: order,
-                            phoneNumber: phoneNumber, // e.g., from logged-in user or prefs
+                            phoneNumber: phoneNumber,
                             email: email,
                             name: name,
                             active: active,
@@ -289,62 +454,23 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                             uniqueRiderOtp: uniqueRiderOtp,
                             userStatus: userStatus,
                             vehicleType: vehicleType,
-                            endpointPost: endpointPost,
-                            onOrderAccepted: () async => filterRides(delayed: true),
+                            endpointPost: order['endpointPost'] ?? '',
+                            onOrderAccepted: () async => filterRides(),
                           );
-
                         }
                       },
                     ),
                   ),
                 ),
-
-
               ],
             ),
-            // child: SingleChildScrollView(
-            //   child: Column(
-            //     children: [
-            //       _OrderCard(),
-            //       SizedBox(height: 8,),
-            //       _OrderCard(),
-            //       SizedBox(height: 8,),
-            //       _OrderCard(),
-            //       SizedBox(height: 8,),
-            //     ],
-            //   ),
-            // ),
           ),
         ),
-
       ),
     );
   }
 
-  Widget buildStatusFilterButton(String status) {
-    final isSelected = selectedStatus == status;
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(status),
-        selected: isSelected,
-        onSelected: (_) {
-          setState(() {
-            _isLoading = true;
-            selectedStatus = status;
-          });
-          filterRides();
-        },
-        checkmarkColor: Common.primary, // ✅ Changes the tick/check color
-        selectedColor: Common.secondary,
-        labelStyle: TextStyle(
-          color: isSelected ? Common.primary : Common.secondary,
-          fontFamily: Common.family, fontSize: Common.h3, fontWeight: Common.weight
-        ),
-        backgroundColor: Common.primary,
-      ),
-    );
-  }
+
 
 }
 
@@ -456,20 +582,17 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
         }),
       );
 
-      if (response.statusCode == 200) {
+      bool accepted = false;
+      Map<String, dynamic>? respBody;
+      try {
+        respBody = jsonDecode(response.body);
+      } catch (_) {}
+      if (response.statusCode == 200 || (respBody != null && (respBody['success'] == true || respBody['status'] == 'success'))) {
         await tripProvider.incrementActiveOrders();
-
-        showTimedSnackBar(
-            context,
-            "Order Accepted Successfully",
-            Duration(seconds: 2),
-            'below'
-        );
-
-        print(jsonDecode(response.body));
+        print(respBody ?? response.body);
         setState(() => _isAccepting = false);
         if (context.mounted) {
-          showTimedSnackBar(context, "Order Accepted Successfully.", Duration(seconds: 2), 'below');
+          showTimedSnackBar(context, "Order Accepted Successfully", Duration(seconds: 2), 'below');
           Provider.of<NotificationProvider>(context, listen: false).showBadge();
         }
         await Future.delayed(Duration(milliseconds: 500));
@@ -477,7 +600,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
           await widget.onOrderAccepted!(); // Wait for the callback including any delay
         }
       } else {
-        getSnackBar(context, "Failed to accept order.", Colors.red, 2);
+        getSnackBar(context, "Failed to accept order. Please try again.", Colors.red, 2);
       }
     } catch (e) {
       debugPrint("Error accepting order: $e");
@@ -487,8 +610,54 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
     }
   }
 
+
+  int _getCartValue() {
+    final value = widget.order['totalCartValue'];
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  String _getCouponTotal() {
+    // Always use coupontotal from order if present
+    final couponTotal = widget.order['coupontotal'];
+    if (couponTotal is String) return couponTotal;
+    if (couponTotal is int) return couponTotal.toString();
+    // If expectedPrice exists, use it as coupon total
+    final expectedPrice = widget.order['expectedPrice'];
+    if (expectedPrice != null) {
+      if (expectedPrice is int) {
+        return expectedPrice.toString();
+      } else if (expectedPrice is String) {
+        return expectedPrice;
+      }
+    }
+    // If adminCommission exists, add it to cart value
+    final adminCommission = widget.order['adminCommission'];
+    final totalCartValue = _getCartValue();
+    if (adminCommission != null) {
+      int commissionValue = 0;
+      if (adminCommission is int) {
+        commissionValue = adminCommission;
+      } else if (adminCommission is String) {
+        commissionValue = int.tryParse(adminCommission) ?? 0;
+      }
+      return (totalCartValue + commissionValue).toString();
+    }
+    // Fallback: just return cart value as string
+    return totalCartValue.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cartValue = _getCartValue();
+    final couponTotal = _getCouponTotal();
+    int commission = 0;
+    try {
+      commission = int.parse(couponTotal) - cartValue;
+    } catch (e) {
+      commission = 0;
+    }
     return Card(
       elevation: 5,
       child: Container(
@@ -499,19 +668,29 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
         ),
         child: Column(
           children: [
-
-            Align(
-              child: Text(
-                'Delivery By - ${getFormattedDeliveryTime(widget.order)}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: Common.weight2,
-                  color: Common.secondary,
-                  fontFamily: 'bold',
+            Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: OrderTypeIcon(orderType: widget.order['orderType'] ?? ''),
                 ),
-              ),
-              alignment: Alignment.topRight,
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: Text(
+                      'Delivery By - ${getFormattedDeliveryTime(widget.order)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: Common.weight2,
+                        color: Common.secondary,
+                        fontFamily: 'bold',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
+            SizedBox(height: 8),
             Row(
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71),),
@@ -581,7 +760,16 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                     children: [
                       Text('CART VALUE', style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
                       SizedBox(height: 3,),
-                      Text('₹${widget.order['totalCartValue'] ?? '0'}', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Colors.green,),)
+                      // Show cart value + commission = coupon total format
+                      Text(
+                        '₹$cartValue + ₹$commission = ₹$couponTotal',
+                        style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Colors.green,),
+                      ),
+                      SizedBox(height: 3,),
+                      Text(
+                        'Commission: ₹$commission',
+                        style: TextStyle(fontSize: Common.h3, fontWeight: FontWeight.bold, color: Colors.blue[800]),
+                      ),
                     ],
                   ),
                 ),
@@ -756,46 +944,45 @@ class _OrderCardState extends State<_OrderCard> {
 
     try {
       final uri = Uri.parse("${Common.baseUrl}${widget.endpointPost}");
+      final payload = {
+        "orderId": widget.order['_id'],
+        "sellerPhone": widget.order['sellerPhone'],
+        "riderData": {
+          "name": widget.name,
+          "email": widget.email,
+          "cityName": widget.cityName,
+          "phoneNumber": widget.phoneNumber,
+          "riderDomain": widget.riderDomain,
+          "deviceToken": "", // Optional: update if using Firebase
+          "vehicleType": widget.vehicleType,
+          "aadhaar": "", // Or add if you store this
+          "licence": widget.licence,
+          "profile": "", // Or fetch if needed
+          "qrcode": widget.qrcode,
+          "success": true,
+          "userStatus": widget.userStatus,
+        }
+      };
+      print('Accepting order POST to: $uri');
+      print('Payload: ' + jsonEncode(payload));
       final response = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "orderId": widget.order['_id'],
-          "sellerPhone": widget.order['sellerPhone'],
-          "riderData": {
-            "name": widget.name,
-            "email": widget.email,
-            "cityName": widget.cityName,
-            "phoneNumber": widget.phoneNumber,
-            "riderDomain": widget.riderDomain,
-            "deviceToken": "", // Optional: update if using Firebase
-            "vehicleType": widget.vehicleType,
-            "aadhaar": "", // Or add if you store this
-            "licence": widget.licence,
-            "profile": "", // Or fetch if needed
-            "qrcode": widget.qrcode,
-            "success": true,
-            "userStatus": widget.userStatus,
-          }
-        }),
+        body: jsonEncode(payload),
       );
+      print('Order accept response status: ${response.statusCode}');
+      print('Order accept response body: ${response.body}');
 
-      if (response.statusCode == 200) {
-        print(jsonDecode(response.body));
+      Map<String, dynamic>? respBody;
+      try {
+        respBody = jsonDecode(response.body);
+      } catch (_) {}
+      if (response.statusCode == 200 || (respBody != null && (respBody['success'] == true || respBody['status'] == 'success'))) {
+        print(respBody ?? response.body);
         await tripProvider.incrementActiveOrders();
-
-        showTimedSnackBar(
-            context,
-            "Order Accepted Successfully",
-            Duration(seconds: 2),
-            'below'
-        );
-
         setState(() => _isAccepting = false);
         if (context.mounted) {
-          showTimedSnackBar(context, "Order Accepted Successfully.",
-              Duration(seconds: 2), 'below');
-
+          showTimedSnackBar(context, "Order Accepted Successfully", Duration(seconds: 2), 'below');
           // Show the badge
           Provider.of<NotificationProvider>(context, listen: false).showBadge();
         }
@@ -804,7 +991,7 @@ class _OrderCardState extends State<_OrderCard> {
           await widget.onOrderAccepted!();
         }
       } else {
-        getSnackBar(context, "Failed to accept order.", Colors.red, 2);
+        getSnackBar(context, "Failed to accept order. Please try again.", Colors.red, 2);
       }
     } catch (e) {
       debugPrint("Error accepting order: $e");
@@ -827,18 +1014,29 @@ class _OrderCardState extends State<_OrderCard> {
         ),
         child: Column(
           children: [
-            Align(
-              child: Text(
-                formatIndianDate(widget.order['pickupTime']?.toString() ?? ''),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: Common.weight2,
-                  color: Common.secondary,
-                  fontFamily: 'bold',
+            Row(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: OrderTypeIcon(orderType: widget.order['orderType'] ?? ''),
                 ),
-              ),
-              alignment: Alignment.topRight,
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: Text(
+                      formatIndianDate(widget.order['pickupTime']?.toString() ?? ''),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: Common.weight2,
+                        color: Common.secondary,
+                        fontFamily: 'bold',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
+            SizedBox(height: 8),
             Row(
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71),),

@@ -16,48 +16,18 @@ import 'firebase_options.dart';
 import 'global/Common.dart';
 import 'home/TripFlowPage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-FlutterLocalNotificationsPlugin();
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'gen_l10n/app_localizations.dart';
+import 'global/my_app_state.dart';
 
 // Background message handler
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-
-  // final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-  // FlutterLocalNotificationsPlugin();
-  //
-  // const AndroidInitializationSettings initializationSettingsAndroid =
-  // AndroidInitializationSettings('@drawable/logo');
-  //
-  // const InitializationSettings initializationSettings =
-  // InitializationSettings(android: initializationSettingsAndroid);
-  //
-  // await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-  //
-  // final data = message.data;
-  // final title = data['title'];
-  // final body = data['body'];
-
-  print('📨 Background notification triggered');
-
-  // if (title != null && body != null) {
-  //   flutterLocalNotificationsPlugin.show(
-  //     message.hashCode,
-  //     title,
-  //     body,
-  //     const NotificationDetails(
-  //       android: AndroidNotificationDetails(
-  //         'order_channel_id',
-  //         'Order Notifications',
-  //         importance: Importance.max,
-  //         priority: Priority.high,
-  //         icon: '@drawable/logo',
-  //       ),
-  //     ),
-  //   );
-  // }
+  
+  // Use the NotificationService for background notifications
+  await NotificationService().initialize();
+  await NotificationService().showBackgroundNotification(message);
 }
 
 
@@ -93,15 +63,8 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
+  // Initialize notification service - single source of truth
   await NotificationService().initialize();
-
-  const AndroidInitializationSettings initializationSettingsAndroid =
-  AndroidInitializationSettings('@drawable/logo');
-
-  const InitializationSettings initializationSettings =
-  InitializationSettings(android: initializationSettingsAndroid);
-
-  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
   runApp(
     MultiProvider(
@@ -115,62 +78,16 @@ void main() async {
 
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Digital Rider',
-      theme: ThemeData(
 
-        fontFamily: 'bevan', // 👈 This sets the default font app-wide
-        // textTheme: ThemeData.light().textTheme.copyWith(
-        //   bodyLarge: TextStyle(fontWeight: FontWeight.w400),
-        //   bodySmall: TextStyle(fontWeight: FontWeight.w300),
-        // ),
-        // colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        scaffoldBackgroundColor: Common.background,
-        // splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
 
-        hoverColor: Colors.transparent,
 
-        // ✅ Global AppBar style
-        appBarTheme: AppBarTheme(
-          // systemOverlayStyle: SystemUiOverlayStyle(
-          //   // statusBarColor: Common.primary, // ✅ match your intended color
-          //   // statusBarIconBrightness: Brightness.light,
-          // ),
-          backgroundColor: Common.secondary,
-          elevation: 0,
-          centerTitle: true,
-          iconTheme: IconThemeData(color: Common.primary),
-          titleTextStyle: TextStyle(
-            color: Common.primary,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
 
-        // ✅ Global BottomNavigationBar style
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          backgroundColor: Common.secondary,
-          selectedItemColor: Common.primary,
-          unselectedItemColor: Colors.grey,
-          type: BottomNavigationBarType.fixed,
-          elevation: 8,
-        ),
-      ),
-      home: const SplashScreen(),
-    );
-  }
-}
 
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  final void Function(Locale)? setLocale;
+  const SplashScreen({super.key, this.setLocale});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -187,7 +104,14 @@ class _SplashScreenState extends State<SplashScreen> {
       return LandingPage(); // Not logged in or email missing
     }
 
-    return NavMain(); // Logged in
+    // Check if app was launched from notification
+    final RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      print('🚀 App launched from notification - directing to IncomingBookingPage');
+      return NavMain(initialIndex: 0); // Go directly to IncomingBookingPage tab
+    }
+
+    return NavMain(); // Logged in - default to home tab
   }
 
   @override

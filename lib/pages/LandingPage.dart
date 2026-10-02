@@ -51,31 +51,63 @@ class _LandingPageState extends State<LandingPage> {
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 12.0),
-              child: GestureDetector(
-                onTap: () => {
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => GoogleLoginPage(),),),
-                },
-                child: Card(
-                  elevation: 4,
-                  shadowColor: Common.primary,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Common.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      child: Text(
-                        "Login",
-                        style: TextStyle(
-                          fontSize: Common.h2,
-                          fontFamily: 'bold',
-                          color: Common.secondary,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: () => {
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => GoogleLoginPage(isSignUp: true),),),
+                    },
+                    child: Card(
+                      elevation: 4,
+                      shadowColor: Common.primary,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: Text(
+                            "Sign Up",
+                            style: TextStyle(
+                              fontSize: Common.h2,
+                              fontFamily: 'bold',
+                              color: Common.secondary,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                  SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: () => {
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => GoogleLoginPage(),),),
+                    },
+                    child: Card(
+                      elevation: 4,
+                      shadowColor: Common.primary,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Common.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: Text(
+                            "Login",
+                            style: TextStyle(
+                              fontSize: Common.h2,
+                              fontFamily: 'bold',
+                              color: Common.secondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

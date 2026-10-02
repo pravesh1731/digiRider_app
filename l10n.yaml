@@ -1,0 +1,3 @@
+arb-dir: lib/l10n
+output-dir: lib/gen_l10n
+untranslated-messages-file: l10n_untranslated.txt

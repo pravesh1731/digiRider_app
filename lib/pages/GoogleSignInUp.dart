@@ -17,16 +17,23 @@ import 'SubdomainPage.dart';
 
 
 class GoogleLoginPage extends StatefulWidget {
-  const GoogleLoginPage({super.key});
+  final bool isSignUp;
+  const GoogleLoginPage({super.key, this.isSignUp = false});
 
   @override
   State<GoogleLoginPage> createState() => _GoogleLoginPageState();
 }
 
 class _GoogleLoginPageState extends State<GoogleLoginPage> {
-  bool _isLogin = true; // 🔁 Tracks current mode
+  late bool _isLogin;
   // final GoogleSignIn _googleSignIn = GoogleSignIn();
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isLogin = !widget.isSignUp;
+  }
 
   Future<void> _handleGoogleSignIn() async {
     try {
