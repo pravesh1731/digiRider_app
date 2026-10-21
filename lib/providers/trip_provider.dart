@@ -28,13 +28,25 @@ class TripProvider with ChangeNotifier {
     }
   }
 
+  /// Syncs the count with the server's list of the rider's active orders.
+  Future<void> setActiveOrdersCount(int count) async {
+    if (_activeOrdersCount == count) return;
+    _activeOrdersCount = count;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('active_orders_count', _activeOrdersCount);
+  }
+
   Future<void> loadActiveOrdersCount() async {
     final prefs = await SharedPreferences.getInstance();
     _activeOrdersCount = prefs.getInt('active_orders_count') ?? 0;
     notifyListeners();
   }
 
-  Future<void> loadTripStage(String tripId) async {
+  /// [riderStatus] is the order's status from the server. An order that is already
+  /// "In Transit" resumes at [TripStage.inProgress] even if the saved stage was lost
+  /// (reinstall, cleared data, another device), so the rider is not asked for the OTP again.
+  Future<void> loadTripStage(String tripId, {String? riderStatus}) async {
     final prefs = await SharedPreferences.getInstance();
     final stageIndex = prefs.getInt('trip_stage_$tripId');
 
@@ -44,6 +56,11 @@ class TripProvider with ChangeNotifier {
       _currentStage = TripStage.values[stageIndex];
     } else {
       _currentStage = TripStage.reachPickup;
+    }
+
+    if (riderStatus?.toLowerCase() == 'in transit' && _currentStage != TripStage.inProgress) {
+      _currentStage = TripStage.inProgress;
+      await prefs.setInt('trip_stage_$tripId', TripStage.inProgress.index);
     }
 
     notifyListeners();

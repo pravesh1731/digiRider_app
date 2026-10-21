@@ -18,6 +18,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
 import '../global/Common.dart';
+import '../global/l10n.dart';
 import '../model/trip_stage.dart';
 import '../providers/trip_provider.dart';
 import '../utils/_TimedSnackBar.dart';
@@ -43,131 +44,52 @@ class _TripFlowPageState extends State<TripFlowPage> {
   // TripStage currentStage = TripStage.reachPickup;
   bool _isLoading = false;
   late TextEditingController _otpController;
-  
-  // Location tracking variables
-  String _currentLocationText = 'Getting current location...';
-  Position? _currentPosition;
-  bool _isLoadingLocation = true;
+  // Digistall orders: the customer's delivery OTP, checked by api/digiorder/setorderStatus on "Delivered".
+  late TextEditingController _deliveryOtpController;
+
+  bool get _isDigistall => widget.endpointPost == 'api/digiorder/setorderStatus';
+
+  // Older Digistall orders have no OTP; the backend only checks it when one is set.
+  bool get _needsDeliveryOtp => _isDigistall && (widget.order['otp']?.toString().isNotEmpty ?? false);
+
   @override
   void initState() {
     super.initState();
     _otpController = TextEditingController();
-    _getCurrentLocation(); // Get rider's current location
+    _deliveryOtpController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<TripProvider>(
         context,
         listen: false,
-      ).loadTripStage(widget.tripId);
+      ).loadTripStage(widget.tripId, riderStatus: widget.order['riderStatus']?.toString());
     });
   }
 
   @override
   void dispose() {
     _otpController.dispose();
+    _deliveryOtpController.dispose();
     super.dispose();
   }
 
-  // Get rider's current location
-  Future<void> _getCurrentLocation() async {
-    try {
-      // Check location permission
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          setState(() {
-            _currentLocationText = 'Location permission denied';
-            _isLoadingLocation = false;
-          });
-          return;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        setState(() {
-          _currentLocationText = 'Location permission permanently denied';
-          _isLoadingLocation = false;
-        });
-        return;
-      }
-
-      // Get current position
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      
-      setState(() {
-        _currentPosition = position;
-      });
-
-      // Convert coordinates to address
-      await _getAddressFromCoordinates(position.latitude, position.longitude);
-      
-    } catch (e) {
-      setState(() {
-        _currentLocationText = 'Unable to get location';
-        _isLoadingLocation = false;
-      });
-      print('Error getting location: $e');
-    }
-  }
-
-  // Convert coordinates to readable address
-  Future<void> _getAddressFromCoordinates(double latitude, double longitude) async {
-    try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(latitude, longitude);
-      if (placemarks.isNotEmpty) {
-        Placemark place = placemarks[0];
-        String address = '';
-        
-        if (place.street != null && place.street!.isNotEmpty) {
-          address += place.street!;
-        }
-        if (place.subLocality != null && place.subLocality!.isNotEmpty) {
-          address += address.isNotEmpty ? ', ${place.subLocality!}' : place.subLocality!;
-        }
-        if (place.locality != null && place.locality!.isNotEmpty) {
-          address += address.isNotEmpty ? ', ${place.locality!}' : place.locality!;
-        }
-        if (place.administrativeArea != null && place.administrativeArea!.isNotEmpty) {
-          address += address.isNotEmpty ? ', ${place.administrativeArea!}' : place.administrativeArea!;
-        }
-        
-        setState(() {
-          _currentLocationText = address.isNotEmpty ? address : 'Current location found';
-          _isLoadingLocation = false;
-        });
-      } else {
-        setState(() {
-          _currentLocationText = 'Location coordinates: $latitude, $longitude';
-          _isLoadingLocation = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _currentLocationText = 'Location coordinates: $latitude, $longitude';
-        _isLoadingLocation = false;
-      });
-      print('Error getting address: $e');
-    }
-  }
-
   Future<bool> _callStageApi(TripStage? currentStage) async {
+    final l10n = context.l10n;
     try {
       final url = Uri.parse('${Common.baseUrl}${widget.endpointPost}');
+      final prefs = await SharedPreferences.getInstance();
+      final email = prefs.getString('email') ?? widget.order['riderDetails']?[0]?['email'];
       Map<String, dynamic> payload;
 
       switch (currentStage) {
         case TripStage.reachPickup:
+        case TripStage.readyToStart:
           // Combined logic: Handle both pickup arrival and trip start
           payload = {
             "orderId": widget.order['_id'],
             "riderStatus": "In Transit",
-            "email": widget.order['riderDetails'][0]['email'],
-            if (widget.endpointPost != 'api/digiorder/setorderStatus')
-              "sellerPhone": widget.order['sellerPhone'],
-            if (widget.endpointPost != 'api/digiorder/setorderStatus')
-              "userOtp": _otpController.text.trim(),
+            "email": email,
+            if (!_isDigistall) "sellerPhone": widget.order['sellerPhone'],
+            if (!_isDigistall) "userOtp": _otpController.text.trim(),
           };
           break;
 
@@ -175,45 +97,14 @@ class _TripFlowPageState extends State<TripFlowPage> {
           payload = {
             "orderId": widget.order['_id'],
             "riderStatus": "Delivered",
-            "email": widget.order['riderDetails'][0]['email'],
-            if (widget.endpointPost != 'api/digiorder/setorderStatus')
-              "sellerPhone": widget.order['sellerPhone'],
+            "email": email,
+            if (!_isDigistall) "sellerPhone": widget.order['sellerPhone'],
+            if (_isDigistall) "otp": _deliveryOtpController.text.trim(),
           };
           break;
 
         default:
-          // Handle unexpected cases
-          payload = {};
-          break;
-      }
-
-      // For reachPickup stage, we now handle the full pickup + start process
-      if (currentStage == TripStage.reachPickup) {
-        // Make the API call for trip start
-        final response = await http.post(
-          url,
-          body: jsonEncode(payload),
-          headers: {'Content-Type': 'application/json'},
-        );
-
-        if (response.statusCode != 200) {
-          final res = jsonDecode(response.body);
-          getSnackBar(
-            context,
-            res['message'] ?? "Action failed. Please try again.",
-            Colors.orange,
-            2,
-          );
           return false;
-        }
-
-        showTimedSnackBar(
-          context,
-          'Trip Started Successfully.',
-          Duration(seconds: 2),
-          'top',
-        );
-        return true;
       }
 
       final response = await http.post(
@@ -221,36 +112,27 @@ class _TripFlowPageState extends State<TripFlowPage> {
         body: jsonEncode(payload),
         headers: {'Content-Type': 'application/json'},
       );
-
-      // print("url: ${url}");
-      // print("payload: ${payload}");
-      // print("API Response: ${response.statusCode} - ${response.body}");
+      if (!mounted) return false;
 
       if (response.statusCode != 200) {
-        final res = jsonDecode(response.body);
-        getSnackBar(
-          context,
-          res['message'] ?? "Action failed. Please try again.",
-          Colors.orange,
-          2,
-        );
+        String? message;
+        try {
+          message = jsonDecode(response.body)['message'];
+        } catch (_) {}
+        getSnackBar(context, message ?? l10n.actionFailed, Colors.orange, 2);
         return false;
       }
 
-      if (currentStage == TripStage.inProgress) {
-        showTimedSnackBar(
-          context,
-          'Trip Completed Successfully.',
-          Duration(seconds: 2),
-          'top',
-        );
-        return true;
-      }
-
+      showTimedSnackBar(
+        context,
+        currentStage == TripStage.inProgress ? l10n.tripCompletedSuccess : l10n.tripStarted,
+        Duration(seconds: 2),
+        'top',
+      );
       return true;
     } catch (e) {
-      print('API Error: $e');
-      getSnackBar(context, "Something went wrong.", Colors.red, 2);
+      debugPrint('API Error: $e');
+      if (mounted) getSnackBar(context, l10n.somethingWentWrong, Colors.red, 2);
       return false;
     }
   }
@@ -282,14 +164,15 @@ class _TripFlowPageState extends State<TripFlowPage> {
       await tripProvider.completeTrip();
 
       // Prepare data for TripCompletePage
+      final notAvailable = context.l10n.notAvailable;
       final pickup = widget.endpointPost == 'api/digiorder/setorderStatus'
-          ? (widget.order['sellerAddress'] ?? 'Not Available')
-          : (widget.order['pickupAddress'] ?? 'Not Available');
+          ? (widget.order['sellerAddress'] ?? notAvailable)
+          : (widget.order['pickupAddress'] ?? notAvailable);
       final destination = widget.endpointPost == 'api/digiorder/setorderStatus'
-          ? (widget.order['address'] ?? 'Not Available')
+          ? (widget.order['address'] ?? notAvailable)
           : ((widget.order['deliveryAddress']?.toString().isNotEmpty ?? false)
               ? widget.order['deliveryAddress']
-              : 'Not available');
+              : notAvailable);
     final amount = widget.endpointPost == 'api/digiorder/setorderStatus'
       ? (widget.order['totalCartValue']?.toString() ?? '0')
       : (widget.order['expectedPrice']?.toString() ?? '0');
@@ -419,68 +302,13 @@ class _TripFlowPageState extends State<TripFlowPage> {
                                 stage: currentStage,
                               ),
                             
-                            // Combined: Show OTP input in the first stage (reachPickup) instead of readyToStart
-                            if (currentStage == TripStage.reachPickup &&
-                                widget.endpointPost != 'api/digiorder/setorderStatus')
-                              Column(
-                                children: [
-                                  SizedBox(height: 8),
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    children: [
-                                      Expanded(
-                                        child: Card(
-                                          elevation: 4,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius: BorderRadius.circular(
-                                                12,
-                                              ),
-                                            ),
-                                            child: Theme(
-                                              data: Theme.of(context).copyWith(
-                                                textSelectionTheme:
-                                                    TextSelectionThemeData(
-                                                      cursorColor: Common.secondary,
-                                                      selectionColor: Common
-                                                          .secondary
-                                                          .withOpacity(0.3),
-                                                      selectionHandleColor:
-                                                          Common.secondary,
-                                                    ),
-                                              ),
-                                              child: TextField(
-                                                controller: _otpController,
-                                                style: TextStyle(
-                                                  color: Common.secondary,
-                                                  fontFamily: 'bold',
-                                                  fontWeight: Common.weight,
-                                                  fontSize: Common.h2,
-                                                ),
-                                                decoration: InputDecoration(
-                                                  border: InputBorder.none,
-                                                  hintText:
-                                                      'Enter Customer OTP here',
-                                                  hintStyle: TextStyle(
-                                                    color: Colors.grey,
-                                                    fontFamily: 'bold',
-                                                    fontWeight: Common.weight,
-                                                    fontSize: Common.h2,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
+                            // Customer OTP to start a ride/parcel trip
+                            if (currentStage == TripStage.reachPickup && !_isDigistall)
+                              _buildOtpField(_otpController, context.l10n.enterCustomerOtp),
+
+                            // Digistall delivery OTP to mark the order delivered
+                            if (currentStage == TripStage.inProgress && _isDigistall)
+                              _buildOtpField(_deliveryOtpController, context.l10n.enterDeliveryOtp),
                             const SizedBox(height: 12),
                           ],
                         ),
@@ -497,7 +325,8 @@ class _TripFlowPageState extends State<TripFlowPage> {
                       child: Column(
                         children: [
                           // Original conditional display
-                          if (currentStage == TripStage.reachPickup)
+                          // Customer can be called before pickup and while delivering
+                          if (widget.order['sellerPhone']?.toString().isNotEmpty ?? false)
                             _buildCallCard(order: widget.order),
                           const SizedBox(height: 6),
                           _isLoading
@@ -528,10 +357,16 @@ class _TripFlowPageState extends State<TripFlowPage> {
                                   sliderButtonYOffset: 14,
                                   onSubmit: () async {
                                     // Check for OTP in the first stage (reachPickup) for non-digiorder requests
-                                    if (currentStage == TripStage.reachPickup && 
-                                        widget.endpointPost != 'api/digiorder/setorderStatus' && 
+                                    if (currentStage == TripStage.reachPickup &&
+                                        !_isDigistall &&
                                         _otpController.text.trim().isEmpty) {
-                                      getSnackBar(context, "Please enter the customer OTP.", Colors.orange, 2,);
+                                      getSnackBar(context, context.l10n.pleaseEnterCustomerOtp, Colors.orange, 2,);
+                                      return;
+                                    }
+                                    if (currentStage == TripStage.inProgress &&
+                                        _needsDeliveryOtp &&
+                                        _deliveryOtpController.text.trim().isEmpty) {
+                                      getSnackBar(context, context.l10n.pleaseEnterDeliveryOtp, Colors.orange, 2,);
                                       return;
                                     }
                                     Future.delayed(
@@ -572,25 +407,72 @@ class _TripFlowPageState extends State<TripFlowPage> {
     );
   }
 
+  Widget _buildOtpField(TextEditingController controller, String hint) {
+    return Column(
+      children: [
+        SizedBox(height: 8),
+        Card(
+          elevation: 4,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Theme(
+              data: Theme.of(context).copyWith(
+                textSelectionTheme: TextSelectionThemeData(
+                  cursorColor: Common.secondary,
+                  selectionColor: Common.secondary.withOpacity(0.3),
+                  selectionHandleColor: Common.secondary,
+                ),
+              ),
+              child: TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                style: TextStyle(
+                  color: Common.secondary,
+                  fontFamily: 'bold',
+                  fontWeight: Common.weight,
+                  fontSize: Common.h2,
+                ),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: hint,
+                  hintStyle: TextStyle(
+                    color: Colors.grey,
+                    fontFamily: 'bold',
+                    fontWeight: Common.weight,
+                    fontSize: Common.h2,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   String _getBottomActionText(TripStage stage) {
     switch (stage) {
       case TripStage.reachPickup:
-        return "Start the Trip";  // Combined: pickup + start
+        return context.l10n.startTrip;  // Combined: pickup + start
       case TripStage.readyToStart:
-        return "Start the Trip";  // Backward compatibility
+        return context.l10n.startTrip;  // Backward compatibility
       case TripStage.inProgress:
-        return "Trip Completed";
+        return context.l10n.completeTrip;
     }
   }
 
   String _getAppBarTitle(TripStage stage) {
     switch (stage) {
       case TripStage.reachPickup:
-        return "Trip Details";  // Combined: pickup arrival + trip details
+        return context.l10n.tripDetails;  // Combined: pickup arrival + trip details
       case TripStage.readyToStart:
-        return "Trip Details";  // Backward compatibility
+        return context.l10n.tripDetails;  // Backward compatibility
       case TripStage.inProgress:
-        return "Trip In Progress";
+        return context.l10n.tripInProgress;
     }
   }
 }
@@ -608,7 +490,7 @@ class _buildCallCard extends StatelessWidget {
         if (phone == null || phone.isEmpty) {
           getSnackBar(
             context,
-            "Seller phone number is missing.",
+            context.l10n.customerPhoneMissing,
             Colors.orange,
             2,
           );
@@ -622,7 +504,7 @@ class _buildCallCard extends StatelessWidget {
         } else {
           getSnackBar(
             context,
-            "Could not launch phone dialer.",
+            context.l10n.couldNotLaunchDialer,
             Colors.orange,
             2,
           );
@@ -650,7 +532,7 @@ class _buildCallCard extends StatelessWidget {
               ),
               SizedBox(width: 30),
               Text(
-                'Call Customer',
+                context.l10n.callCustomer,
                 style: TextStyle(
                   fontWeight: Common.weight,
                   fontSize: Common.h2,
@@ -674,17 +556,30 @@ class _buildGoogleMapsButton extends StatelessWidget {
     required this.stage,
   });
 
-  String _getLaunchMapText(TripStage stage) {
+  String _getLaunchMapText(BuildContext context, TripStage stage) {
     switch (stage) {
       case TripStage.reachPickup:
-        return "Navigate to Pickup";
+        return context.l10n.navigateToPickup;
       case TripStage.inProgress:
-        return "Navigate to Destination";
+        return context.l10n.navigateToDestination;
       default:
-        return "Trip Completed";
-      // case TripStage.confirmOtp:
-      //   return "Confirm OTP";
+        return context.l10n.tripCompleted;
     }
+  }
+
+  /// Navigation target for the current stage: coordinates when the order has them
+  /// (Digistall store/customer), otherwise the address text.
+  String? _navigationTarget() {
+    final toPickup = stage == TripStage.reachPickup;
+    final lat = order[toPickup ? 'sellerLat' : 'customerLat'];
+    final lng = order[toPickup ? 'sellerLng' : 'customerLng'];
+    if (lat != null && lng != null) return '$lat,$lng';
+
+    final address = toPickup
+        ? (order['pickupAddress'] ?? order['sellerAddress'])
+        : (order['deliveryAddress'] ?? order['address']);
+    final text = address?.toString().trim();
+    return (text == null || text.isEmpty) ? null : text;
   }
 
   @override
@@ -692,45 +587,34 @@ class _buildGoogleMapsButton extends StatelessWidget {
     return InkWell(
       onTap: () async {
         try {
-          final pickup =
-              _getLaunchMapText(stage) == "Navigate to Pickup"
-                  ? order['pickupAddress']?.toString().trim()
-                  : order['deliveryAddress']?.toString().trim();
+          final target = _navigationTarget();
 
-          // Check if pickup or delivery is null or empty
-          if (pickup == null || pickup.isEmpty) {
+          if (target == null) {
             getSnackBar(
               context,
-              _getLaunchMapText(stage) == "Navigate to Pickup"
-                  ? 'Pickup address is missing.'
-                  : 'Destination address is missing.',
+              stage == TripStage.reachPickup
+                  ? context.l10n.pickupAddressMissing
+                  : context.l10n.destinationAddressMissing,
               Colors.orange,
               2,
             );
-            // ScaffoldMessenger.of(context).showSnackBar(
-            //   const SnackBar(content: Text('Pickup address is missing.')),
-            // );
             return;
           }
 
-          // Try Google Maps navigation with destination only
-          final encodedPickup = Uri.encodeComponent(pickup);
-          final navigationUrl = Uri.parse(
-            "google.navigation:q=$encodedPickup&mode=d",
-          );
-
+          final encodedTarget = Uri.encodeComponent(target);
+          final navigationUrl = Uri.parse("google.navigation:q=$encodedTarget&mode=d");
           if (await canLaunchUrl(navigationUrl)) {
-            await launchUrl(
-              navigationUrl,
-              mode: LaunchMode.externalApplication,
-            );
+            await launchUrl(navigationUrl, mode: LaunchMode.externalApplication);
             return;
           }
+
+          // Google Maps app not installed: open directions in the browser instead.
+          await launchUrl(
+            Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$encodedTarget&travelmode=driving"),
+            mode: LaunchMode.externalApplication,
+          );
         } catch (e) {
-          getSnackBar(context, 'Something went wrong.', Colors.orange, 2);
-          // ScaffoldMessenger.of(context).showSnackBar(
-          //   SnackBar(content: Text('Error: ${e.toString()}')),
-          // );
+          getSnackBar(context, context.l10n.somethingWentWrong, Colors.orange, 2);
         }
       },
       child: Card(
@@ -747,7 +631,7 @@ class _buildGoogleMapsButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                _getLaunchMapText(stage),
+                _getLaunchMapText(context, stage),
                 style: TextStyle(
                   fontWeight: Common.weight,
                   fontSize: Common.h2,
@@ -774,28 +658,28 @@ class _buildContactCard extends StatelessWidget {
   final String endpointPost;
   const _buildContactCard({super.key, required this.order, required this.endpointPost});
 
-  String getFormattedDeliveryTime(Map<String, dynamic> order) {
+  String getFormattedDeliveryTime(BuildContext context, Map<String, dynamic> order) {
     final deliveryBy = order['deliveryBy'];
     final deliveryTime = order['deliveryTime'];
 
     if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
-      return 'Delivery time not set';
+      return context.l10n.deliveryTimeNotSet;
     }
 
     try {
       final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
       return DateFormat('dd MMM yyyy, hh:mm a').format(parsed); // Ex: 04 Jul 2025, 12:00 PM
     } catch (e) {
-      return 'Invalid delivery time';
+      return context.l10n.invalidDeliveryTime;
     }
   }
 
-  String formatIndianDate(String input) {
+  String formatIndianDate(BuildContext context, String input) {
     try {
       // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       // Convert to local time if needed (optional)
       final localTime = parsed.toLocal();
@@ -807,7 +691,7 @@ class _buildContactCard extends StatelessWidget {
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
@@ -845,7 +729,7 @@ class _buildContactCard extends StatelessWidget {
                 Align(
                   alignment: Alignment.topRight,
                   child: Text(
-                    'Order ID',
+                    context.l10n.orderId,
                     style: TextStyle(
                       fontSize: Common.h2,
                       fontWeight: Common.weight2,
@@ -862,7 +746,7 @@ class _buildContactCard extends StatelessWidget {
                     alignment: Alignment.centerRight,
                     child: Text(
                       '#${order['_id']?.toString() ?? ''}',
-                      // '${getFormattedDeliveryTime(order)}',
+                      // '${getFormattedDeliveryTime(context, order)}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: Common.weight2,
@@ -888,7 +772,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Name',
+                    context.l10n.name,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -903,7 +787,7 @@ class _buildContactCard extends StatelessWidget {
                       child: Text(
                         (order['sellerName']?.toString().isNotEmpty ?? false)
                             ? order['sellerName']
-                            : 'Not available',
+                            : context.l10n.notAvailable,
                         style: TextStyle(
                             fontWeight: Common.weight2,
                             fontSize: Common.h2,
@@ -922,7 +806,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Phone No.',
+                    context.l10n.phoneNo,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -937,7 +821,7 @@ class _buildContactCard extends StatelessWidget {
                       child: Text(
                         (order['sellerPhone']?.toString().isNotEmpty ?? false)
                             ? order['sellerPhone']
-                            : 'Not available',
+                            : context.l10n.notAvailable,
                         style: TextStyle(
                             fontWeight: Common.weight2,
                             fontSize: Common.h2,
@@ -956,7 +840,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Distance',
+                    context.l10n.distance,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -969,7 +853,7 @@ class _buildContactCard extends StatelessWidget {
                     child: Align(
                       alignment: AlignmentDirectional.centerEnd,
                       child: Text(
-                        order['distance']?? 'Unknown',
+                        order['distance']?? context.l10n.unknown,
                         style: TextStyle(
                             fontWeight: Common.weight2,
                             fontSize: Common.h2,
@@ -990,7 +874,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Vehicle Type',
+                    context.l10n.vehicleType,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -1003,7 +887,7 @@ class _buildContactCard extends StatelessWidget {
                     child: Align(
                       alignment: AlignmentDirectional.centerEnd,
                       child: Text(
-                        (order['vehicleType']?? 'Unknown'),
+                        (order['vehicleType']?? context.l10n.unknown),
                         style: TextStyle(
                             fontWeight: Common.weight2,
                             fontSize: Common.h2,
@@ -1022,7 +906,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Number of Passengers',
+                    context.l10n.numberOfPassengers,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -1036,7 +920,7 @@ class _buildContactCard extends StatelessWidget {
                       alignment: AlignmentDirectional.centerEnd,
                       child: Text(
                         textAlign: TextAlign.end,
-                        (order['numOfPassengers']?? 'Unknown'),
+                        (order['numOfPassengers']?? context.l10n.unknown),
                         style: TextStyle(
                             fontWeight: Common.weight2,
                             fontSize: Common.h2,
@@ -1056,7 +940,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Parcel Message',
+                    context.l10n.parcelMessage,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -1069,7 +953,7 @@ class _buildContactCard extends StatelessWidget {
                     child: Align(
                       alignment: AlignmentDirectional.centerEnd,
                       child: Text(
-                        order['message']?? 'Nil',
+                        order['message']?? context.l10n.nil,
                         textAlign: TextAlign.end,
                         style: TextStyle(
                             fontWeight: Common.weight2,
@@ -1088,7 +972,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Parcel Weight',
+                    context.l10n.parcelWeight,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -1101,7 +985,7 @@ class _buildContactCard extends StatelessWidget {
                     child: Align(
                       alignment: AlignmentDirectional.centerEnd,
                       child: Text(
-                        (order['weight']?? 'Unknown'),
+                        (order['weight']?? context.l10n.unknown),
                         style: TextStyle(
                             fontWeight: Common.weight2,
                             fontSize: Common.h2,
@@ -1123,7 +1007,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'CART VALUE',
+                    context.l10n.cartValue,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -1155,7 +1039,7 @@ class _buildContactCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Total',
+                    context.l10n.total,
                     style: TextStyle(
                         fontWeight: Common.weight2,
                         fontSize: Common.h2,
@@ -1189,8 +1073,8 @@ class _buildContactCard extends StatelessWidget {
               children: [
                 Text(
                   endpointPost=='api/digiorder/setorderStatus'?
-                      'Total Value':
-                  'TOTAL',
+                      context.l10n.totalValue:
+                  context.l10n.total,
                   style: TextStyle(
                       fontWeight: Common.weight2,
                       fontSize: Common.h2,
@@ -1204,7 +1088,7 @@ class _buildContactCard extends StatelessWidget {
                     alignment: AlignmentDirectional.centerEnd,
                     child: Text(
                       endpointPost=='api/digiorder/setorderStatus'?
-                      '${order['totalCartValue'].toString()} Rs.': '${order['expectedPrice']?? 'Unknown'} Rs.',
+                      '${order['totalCartValue'].toString()} Rs.': '${order['expectedPrice']?? context.l10n.unknown} Rs.',
                       style: TextStyle(
                           fontWeight: Common.weight2,
                           fontSize: Common.h2,
@@ -1224,8 +1108,8 @@ class _buildContactCard extends StatelessWidget {
               children: [
                 Text(
                   endpointPost=='api/digiorder/setorderStatus'?
-                      'Deliverd By':
-                  'Pickup Time',
+                      context.l10n.deliverBy:
+                  context.l10n.pickupTime,
                   style: TextStyle(
                       fontWeight: Common.weight2,
                       fontSize: Common.h2,
@@ -1239,8 +1123,8 @@ class _buildContactCard extends StatelessWidget {
                     alignment: AlignmentDirectional.centerEnd,
                     child: Text(
                       endpointPost=='api/digiorder/setorderStatus'?
-                      getFormattedDeliveryTime(order):
-                      formatIndianDate(order['pickupTime']?.toString() ?? ''),
+                      getFormattedDeliveryTime(context, order):
+                      formatIndianDate(context, order['pickupTime']?.toString() ?? ''),
                       style: TextStyle(
                           fontWeight: Common.weight2,
                           fontSize: Common.h2,
@@ -1270,7 +1154,7 @@ class _buildLocationCard extends StatefulWidget {
 }
 
 class _buildLocationCardState extends State<_buildLocationCard> {
-  String _currentLocationText = 'Getting current location...';
+  String? _currentLocationText; // null while the location is being fetched
   Position? _currentPosition;
   bool _isLoadingLocation = true;
 
@@ -1289,7 +1173,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           setState(() {
-            _currentLocationText = 'Location permission denied';
+            _currentLocationText = context.l10n.locationDenied;
             _isLoadingLocation = false;
           });
           return;
@@ -1298,7 +1182,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
 
       if (permission == LocationPermission.deniedForever) {
         setState(() {
-          _currentLocationText = 'Location permission permanently denied';
+          _currentLocationText = context.l10n.locationDeniedForever;
           _isLoadingLocation = false;
         });
         return;
@@ -1318,7 +1202,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
       
     } catch (e) {
       setState(() {
-        _currentLocationText = 'Unable to get location';
+        _currentLocationText = context.l10n.unableToGetLocation;
         _isLoadingLocation = false;
       });
       print('Error getting location: $e');
@@ -1347,18 +1231,18 @@ class _buildLocationCardState extends State<_buildLocationCard> {
         }
         
         setState(() {
-          _currentLocationText = address.isNotEmpty ? address : 'Current location found';
+          _currentLocationText = address.isNotEmpty ? address : context.l10n.currentLocationFound;
           _isLoadingLocation = false;
         });
       } else {
         setState(() {
-          _currentLocationText = 'Location coordinates: $latitude, $longitude';
+          _currentLocationText = context.l10n.locationCoordinates('$latitude', '$longitude');
           _isLoadingLocation = false;
         });
       }
     } catch (e) {
       setState(() {
-        _currentLocationText = 'Location coordinates: $latitude, $longitude';
+        _currentLocationText = context.l10n.locationCoordinates('$latitude', '$longitude');
         _isLoadingLocation = false;
       });
       print('Error getting address: $e');
@@ -1388,7 +1272,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
                 ),
                 SizedBox(width: 16),
                 Text(
-                  'YOUR LOCATION',
+                  context.l10n.yourLocation,
                   style: TextStyle(
                     fontSize: Common.h2,
                     fontWeight: Common.weight2,
@@ -1418,7 +1302,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
                         children: [
                           Expanded(
                             child: Text(
-                              _currentLocationText,
+                              _currentLocationText ?? context.l10n.gettingLocation,
                               style: TextStyle(
                                 fontSize: Common.h2,
                                 fontWeight: Common.weight,
@@ -1457,7 +1341,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
                 ),
                 SizedBox(width: 16),
                 Text(
-                  'PICKUP',
+                  context.l10n.pickup,
                   style: TextStyle(
                     fontSize: Common.h2,
                     fontWeight: Common.weight,
@@ -1484,8 +1368,8 @@ class _buildLocationCardState extends State<_buildLocationCard> {
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
                         widget.endpointPost=='api/digiorder/setorderStatus'?
-                            widget.order['sellerAddress']?? 'Not Available':
-                        widget.order['pickupAddress']?? 'Not Available',
+                            widget.order['sellerAddress']?? context.l10n.notAvailable:
+                        widget.order['pickupAddress']?? context.l10n.notAvailable,
                         style: TextStyle(
                           fontSize: Common.h2,
                           fontWeight: Common.weight,
@@ -1510,7 +1394,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
                 ),
                 SizedBox(width: 16),
                 Text(
-                  'DROP',
+                  context.l10n.drop,
                   style: TextStyle(
                     fontSize: Common.h2,
                     fontWeight: Common.weight,
@@ -1524,10 +1408,10 @@ class _buildLocationCardState extends State<_buildLocationCard> {
               padding: const EdgeInsets.only(left: 40.0, right: 8),
               child: Text(
                 widget.endpointPost=='api/digiorder/setorderStatus'?
-                    widget.order['address']?? 'Not Available' :
+                    widget.order['address']?? context.l10n.notAvailable :
                 (widget.order['deliveryAddress']?.toString().isNotEmpty ?? false)
                     ? widget.order['deliveryAddress']
-                    : 'Not available',
+                    : context.l10n.notAvailable,
                 style: TextStyle(
                   fontSize: Common.h2,
                   fontWeight: Common.weight,

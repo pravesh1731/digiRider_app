@@ -7,12 +7,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:pdf/pdf.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../global/Common.dart';
-import '../pages/GoogleSignInUp.dart';
+import '../global/l10n.dart';
+import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../utils/_TimedSnackBar.dart';
 import '../utils/bottomSnackBar.dart';
@@ -40,13 +42,14 @@ class _SettingsPageState extends State<SettingsPage> {
   String domain = '';
   String qrcode = '';
 
-  List options = [];
+  String profile = '';
 
   bool _isGenerating = false;
+  bool _notificationsEnabled = true;
 
-  // Replace city and vehicle storage to use keys, not localized values
-  String cityKey = 'gotan';
-  String vehicleKey = 'bike';
+  // Backend values ("Gotan"/"Jodhpur", "Bike"/"Auto"/"Car"); the API matches them case-sensitively.
+  static const List<String> _cities = ['Gotan', 'Jodhpur'];
+  static const List<String> _vehicles = ['Bike', 'Auto', 'Car'];
 
   Future<pw.ImageProvider> imageFromAssetBundle(String path) async {
     final byteData = await rootBundle.load(path);
@@ -82,8 +85,16 @@ class _SettingsPageState extends State<SettingsPage> {
     final back = pw.MemoryImage(backImage.buffer.asUint8List());
     final pageWidth = PdfPageFormat.a4.width;
 
-    // Load image from network
-    final netImgBytes = (await http.get(Uri.parse(qrcode))).bodyBytes;
+    // Load the payment QR uploaded at signup; fall back to the profile QR if it is missing.
+    Uint8List netImgBytes = qrBytes;
+    if (qrcode.isNotEmpty) {
+      try {
+        final response = await http.get(Uri.parse(qrcode));
+        if (response.statusCode == 200) netImgBytes = response.bodyBytes;
+      } catch (e) {
+        debugPrint('Could not load payment QR: $e');
+      }
+    }
     final netImage = pw.MemoryImage(netImgBytes);
 
     final _labelStyle = pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 18);
@@ -221,103 +232,93 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _handleDownloadAndPrint() async {
     setState(() => _isGenerating = true);
 
-    final pdfData = await _generatePdf();
-
-    setState(() => _isGenerating = false);
-
-    await Printing.layoutPdf(onLayout: (_) => pdfData);
+    try {
+      final pdfData = await _generatePdf();
+      if (mounted) setState(() => _isGenerating = false);
+      await Printing.layoutPdf(onLayout: (_) => pdfData);
+    } catch (e) {
+      debugPrint('Could not create rider card: $e');
+      if (mounted) {
+        setState(() => _isGenerating = false);
+        getSnackBar(context, context.l10n.somethingWentWrong, Colors.red, 1);
+      }
+    }
   }
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
-    checkNotificationPermission(context);
-  }
-
-  Future<void> checkNotificationPermission(BuildContext context) async {
-
-    var status = await Permission.notification.status;
-
-    if (status.isGranted) {
-      return;
-    }
-
-    // 👇 Request permission (this will show the system permission popup if possible)
-    var result = await Permission.notification.request();
-
-    // 👉 Only handle the case where the permission was asked and user denied it
-    if (result.isDenied) {
-      // Delay the dialog until the frame is built
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        showStyledPermissionDialog(
-          context: context,
-          title: "Notification Permission Needed",
-          message: "We use notifications to alert you about important updates. Please enable permission.",
-          // showSettingsButton: result.isPermanentlyDenied, // only show settings if needed
-        );
-      });
-    }
-  }
-
-  void showStyledPermissionDialog({
-    required BuildContext context,
-    required String title,
-    required String message,
-    // bool showSettingsButton = true,
-  }) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Common.secondary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        titlePadding: EdgeInsets.only(top: 20, left: 24, right: 24),
-        contentPadding: EdgeInsets.only(left: 24, right: 24, top: 14, bottom: 24),
-        actionsPadding: EdgeInsets.only(right: 16, bottom: 16),
-        title: Text(
-          title,
-          style: TextStyle(fontWeight: Common.weight2, fontFamily: 'bold', fontSize: 18, color: Common.primary),
-        ),
-        content: SizedBox(
-          width: MediaQuery.of(context).size.width * 0.9,
-          child: Text(message, style: TextStyle(fontWeight: Common.weight2, fontFamily: 'bold', fontSize: Common.h2, color: Common.primary)),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(context),
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Common.primary,
-              side: BorderSide(color: Common.primary),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            ),
-            child: Text("Close", style: TextStyle(color: Common.secondary, fontFamily: 'bold',fontSize: Common.h2, fontWeight: Common.weight2)),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _loadUserData() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
+    final notificationsEnabled = await NotificationService().isEnabled();
+    if (!mounted) return;
     setState(() {
       name = prefs.getString('name') ?? '';
       phone = prefs.getString('phoneNumber') ?? '';
-      cityKey = prefs.getString('cityKey') ?? 'gotan';
-      vehicleKey = prefs.getString('vehicleKey') ?? 'bike';
+      city = prefs.getString('cityName') ?? '';
+      vehicle = prefs.getString('vehicleType') ?? '';
       domain = prefs.getString('riderDomain') ?? '';
       qrcode = prefs.getString('qrcode') ?? '';
-      options[0][1] = cityKey;
-      options[1][1] = vehicleKey;
+      profile = prefs.getString('profile') ?? '';
+      _notificationsEnabled = notificationsEnabled;
     });
+  }
+
+  Future<void> _updateCity(String newCity) async {
+    final l10n = context.l10n;
+    final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('email');
+    if (email == null || email.isEmpty) return;
+
+    try {
+      final response = await http.post(
+        Uri.parse('${Common.baseUrl}api/rider/updatecityname'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": email, "cityName": newCity}),
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        // cityName drives the incoming order feed and which city's notifications this rider gets.
+        await prefs.setString('cityName', newCity);
+        setState(() => city = newCity);
+        getSnackBar(context, l10n.cityUpdated, Colors.green, 0);
+      } else {
+        getSnackBar(context, l10n.cityUpdateFailed, Colors.red, 1);
+      }
+    } catch (e) {
+      if (mounted) getSnackBar(context, l10n.somethingWentWrong, Colors.orange, 2);
+    }
+  }
+
+  Future<void> _toggleNotifications(bool enabled) async {
+    final l10n = context.l10n;
+    final granted = await NotificationService().setEnabled(enabled);
+    if (!mounted) return;
+    setState(() => _notificationsEnabled = enabled);
+
+    if (!enabled) {
+      getSnackBar(context, l10n.notificationsOff, Colors.orange, 2);
+    } else if (granted) {
+      await NotificationService().showTestNotification();
+      if (mounted) getSnackBar(context, l10n.notificationsOn, Colors.green, 0);
+    } else {
+      getSnackBar(context, l10n.notificationsBlocked, Colors.orange, 1);
+    }
+  }
+
+  Future<void> _openPrivacyPolicy() async {
+    final uri = Uri.parse('https://rider.digistall.in/#/privacy-policy');
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+      getSnackBar(context, context.l10n.somethingWentWrong, Colors.orange, 2);
+    }
   }
 
   Future<void> showCityPickerDialog(String currentCity, Function(String) onCitySelected) async {
     final screenWidth = MediaQuery.of(context).size.width;
     final localizations = AppLocalizations.of(context)!;
-    final cityMap = {
-      'gotan': localizations.gotan,
-      'jodhpur': localizations.jodhpur,
-    };
     await showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -328,7 +329,7 @@ class _SettingsPageState extends State<SettingsPage> {
           width: screenWidth * 0.9,
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            children: ['gotan', 'jodhpur'].map((key) {
+            children: _cities.map((key) {
               return ListTile(
                 title: Container(
                   decoration: BoxDecoration(
@@ -338,7 +339,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   padding: EdgeInsets.symmetric(horizontal: 0, vertical: 10),
                   child: Row(
                     children: [
-                      Text(cityMap[key] ?? key, style: TextStyle(color: Common.primary, fontFamily: 'bold', fontSize: Common.h3, fontWeight: Common.weight),),
+                      Text(localizations.cityName(key), style: TextStyle(color: Common.primary, fontFamily: 'bold', fontSize: Common.h3, fontWeight: Common.weight),),
                       Spacer(),
                       Container(
                         height: 12,
@@ -361,6 +362,15 @@ class _SettingsPageState extends State<SettingsPage> {
             }).toList(),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildInitial() {
+    return Center(
+      child: Text(
+        name.isNotEmpty ? name.characters.first.toUpperCase() : '',
+        style: TextStyle(color: Common.primary, fontSize: 32, fontFamily: 'bold', fontWeight: Common.weight),
       ),
     );
   }
@@ -408,9 +418,23 @@ class _SettingsPageState extends State<SettingsPage> {
                 },
               );
               try {
+                await LocationService().stop();
+                await NotificationService().onLogout();
+                try {
+                  await GoogleSignIn().signOut();
+                  await FirebaseAuth.instance.signOut();
+                } catch (e) {
+                  debugPrint('Sign-out error: $e');
+                }
+
                 SharedPreferences prefs = await SharedPreferences.getInstance();
+                // Keep device-level choices (language, notification switch) across accounts.
+                final languageCode = prefs.getString('languageCode');
+                final notificationsEnabled = prefs.getBool('notificationsEnabled');
                 await prefs.clear();
-                await NotificationService().resetFcmToken();
+                if (languageCode != null) await prefs.setString('languageCode', languageCode);
+                if (notificationsEnabled != null) await prefs.setBool('notificationsEnabled', notificationsEnabled);
+
                 Navigator.of(context, rootNavigator: true).pop();
                 Navigator.pushAndRemoveUntil(
                   context,
@@ -445,21 +469,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context)!;
-    final cityMap = {
-      'gotan': localizations.gotan,
-      'jodhpur': localizations.jodhpur,
-    };
-    final vehicleMap = {
-      'bike': localizations.bike,
-      'auto': localizations.auto,
-      'car': localizations.car,
-    };
-    options = [
-      ['assets/Icons/location.svg', cityMap[cityKey] ?? localizations.gotan, 'assets/Icons/edit.svg', '0'],
-      ['assets/Icons/bike.svg', vehicleMap[vehicleKey] ?? localizations.bike, 'assets/Icons/edit.svg', '0'],
-      ['assets/Icons/bell.png', localizations.allowNotification, 'assets/Icons/right-arrow.png', '1'],
-      ['assets/Icons/logout.png', localizations.logout, null , '1'],
-    ];
 
     final myAppState = context.findAncestorStateOfType<MyAppState>();
     final currentLocale = myAppState?.locale ?? Localizations.localeOf(context);
@@ -516,10 +525,18 @@ class _SettingsPageState extends State<SettingsPage> {
                           Container(
                             width: MediaQuery.of(context).size.width/4,
                             height: MediaQuery.of(context).size.width/4,
+                            clipBehavior: Clip.antiAlias,
                             decoration: BoxDecoration(
                               color: Colors.black,
                               shape: BoxShape.circle,
                             ),
+                            child: profile.isNotEmpty
+                                ? Image.network(
+                                    profile,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => _buildInitial(),
+                                  )
+                                : _buildInitial(),
                           ),
                           SizedBox(height: 10,),
                           Text(name.isNotEmpty ? name : '-', style: TextStyle(fontWeight: Common.weight2, fontSize: Common.h1, color: Common.secondary, fontFamily: 'bold'),),
@@ -679,44 +696,11 @@ class _SettingsPageState extends State<SettingsPage> {
                                     ),
                                   ),
                                   SizedBox(width: 20,),
-                                  Expanded(child: Text(cityMap[cityKey] ?? localizations.gotan, style: TextStyle(fontSize: Common.h2, color: Common.secondary, fontWeight: Common.weight2, fontFamily: 'bold'),)),
+                                  Expanded(child: Text(city.isNotEmpty ? localizations.cityName(city) : '-', style: TextStyle(fontSize: Common.h2, color: Common.secondary, fontWeight: Common.weight2, fontFamily: 'bold'),)),
                                   // if('assets/Icons/edit.svg'!=null)
                                     InkWell(
                                       onTap: () async {
-                                        final prefs = await SharedPreferences.getInstance();
-                                        String? email = prefs.getString("email");
-
-                                        if (email == null) return;
-
-                                        await showCityPickerDialog(city, (newCity) async {
-
-                                          // Send to API
-                                          try {
-                                            final response = await http.post(
-                                              Uri.parse(Common.baseUrl+"api/rider/updatecityname"), // Replace with actual base URL
-                                              headers: {"Content-Type": "application/json"},
-                                              body: jsonEncode({
-                                                "email": email,
-                                                "cityName": newCity,
-                                              }),
-                                            );
-
-                                            if (response.statusCode == 200) {
-                                              print('success');
-                                              getSnackBar(context, localizations.cityUpdated, Colors.green, 0);
-                                              await prefs.setString("cityKey", newCity);
-                                              setState(() {
-                                                cityKey = newCity;
-                                                options[0][1] = newCity; // optional if you're still using options[]
-                                              });
-                                            } else {
-                                              getSnackBar(context, localizations.cityUpdateFailed, Colors.red, 1);
-                                            }
-                                          } on Exception catch (e) {
-
-                                            getSnackBar(context, 'Something went wrong', Colors.orange, 2);
-                                          }
-                                        });
+                                        await showCityPickerDialog(city, _updateCity);
                                       },
                                       child: Container(
                                         height: 35,
@@ -758,7 +742,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     ),
                                   ),
                                   SizedBox(width: 20,),
-                                  Expanded(child: Text(vehicleMap[vehicleKey] ?? localizations.bike, style: TextStyle(fontSize: Common.h2, color: Common.secondary, fontWeight: Common.weight2, fontFamily: 'bold',),)),
+                                  Expanded(child: Text(vehicle.isNotEmpty ? localizations.vehicleName(vehicle) : '-', style: TextStyle(fontSize: Common.h2, color: Common.secondary, fontWeight: Common.weight2, fontFamily: 'bold',),)),
                                   // if('assets/Icons/edit.svg'!=null)
                                   InkWell(
                                     onTap: () async {
@@ -770,12 +754,12 @@ class _SettingsPageState extends State<SettingsPage> {
                                         builder: (_) => AlertDialog(
                                           backgroundColor: Common.secondary,
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                          title: Text('Select Vehicle', style: TextStyle(fontWeight: Common.weight, color: Common.primary, fontSize: Common.title, fontFamily: 'bold')),
+                                          title: Text(localizations.selectVehicle, style: TextStyle(fontWeight: Common.weight, color: Common.primary, fontSize: Common.title, fontFamily: 'bold')),
                                           content: SizedBox(
                                             width: screenWidth * 0.9,
                                             child: Column(
                                               mainAxisSize: MainAxisSize.min,
-                                              children: ['bike', 'auto', 'car'].map((key) {
+                                              children: _vehicles.map((key) {
                                                 return ListTile(
                                                   // dense: true,
                                                   title: Container(
@@ -786,9 +770,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                                     padding: EdgeInsets.symmetric(horizontal: 0, vertical: 10),
                                                     child: Row(
                                                       children: [
-                                                        Icon(key=='bike'? Icons.pedal_bike_rounded : key=='auto'? Icons.electric_rickshaw_rounded : Icons.car_crash_rounded, size: 18, color: Common.primary,),
+                                                        Icon(key=='Bike'? Icons.pedal_bike_rounded : key=='Auto'? Icons.electric_rickshaw_rounded : Icons.car_crash_rounded, size: 18, color: Common.primary,),
                                                         SizedBox(width: 20,),
-                                                        Text(vehicleMap[key] ?? key, style: TextStyle(color: Common.primary, fontFamily: 'bold', fontSize: Common.h3, fontWeight: Common.weight),),
+                                                        Text(localizations.vehicleName(key), style: TextStyle(color: Common.primary, fontFamily: 'bold', fontSize: Common.h3, fontWeight: Common.weight),),
                                                         Spacer(),
                                                         Container(
                                                           height: 12,
@@ -805,11 +789,11 @@ class _SettingsPageState extends State<SettingsPage> {
                                                   ),
                                                   onTap: () async {
                                                     Navigator.of(context).pop();
-                                                    await prefs.setString("vehicleKey", key);
-                                                    getSnackBar(context, localizations.downloadCard + ' ' + (vehicleMap[key] ?? '') + ' updated successfully', Colors.green, 0);
+                                                    // vehicleType filters the ride requests shown on the incoming bookings tab.
+                                                    await prefs.setString('vehicleType', key);
+                                                    getSnackBar(context, localizations.vehicleUpdated(localizations.vehicleName(key)), Colors.green, 0);
                                                     setState(() {
-                                                      vehicleKey = key;
-                                                      options[1][1] = key;
+                                                      vehicle = key;
                                                     });
                                                   },
                                                 );
@@ -839,17 +823,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             Divider(color: Colors.grey.shade300,),
                             SizedBox(height: 2,),
                             InkWell(
-                              onTap: () async {
-                                // Test notification functionality
-                                await NotificationService().showTestNotification();
-                                bool enabled = await NotificationService().areNotificationsEnabled();
-                                getSnackBar(context, 
-                                  enabled ? "Test notification sent!" : "Notifications are disabled. Please enable in settings.", 
-                                  enabled ? Colors.green : Colors.orange, 
-                                  enabled ? 0 : 1
-                                );
-                              },
-
+                              onTap: () => _toggleNotifications(!_notificationsEnabled),
                               child: Row(
                                 children: [
                                   Container(
@@ -865,18 +839,12 @@ class _SettingsPageState extends State<SettingsPage> {
                                   ),
                                   SizedBox(width: 20,),
                                   Expanded(child: Text(localizations.allowNotification, style: TextStyle(fontSize: Common.h2, color: Common.secondary, fontWeight: Common.weight2, fontFamily: 'bold'),)),
-                                  // if(options[2]!=null)
-                                    Container(
-                                      height: 35,
-                                      width: 35,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(10),
-                                        // color: Common.secondary,
-                                      ),
-                                      child: Center(
-                                        child: Image.asset('assets/Icons/right-arrow.png', color: Common.secondary, width: 18, height: 18,),
-                                      ),
-                                    ),
+                                  Switch(
+                                    value: _notificationsEnabled,
+                                    activeColor: Common.primary,
+                                    activeTrackColor: Common.secondary,
+                                    onChanged: _toggleNotifications,
+                                  ),
                                 ],
                               ),
                             ),
@@ -987,7 +955,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                       color: Common.secondary,
                                     ),
                                     child: Center(
-                                      // child: Image.asset('assets/Icons/logout.png', color: Common.primary, width: 15, height: 15,),
+                                      child: Icon(Icons.logout, color: Common.primary, size: 16),
                                     ),
                                   ),
                                   SizedBox(width: 20,),
@@ -998,7 +966,11 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                             // _buildListOptions(options[3]),
                             // Spacer(),
-                            Text('Terms & Conditions', style: TextStyle(fontWeight: Common.weight, fontSize: Common.h3, color: Common.light),)
+                            SizedBox(height: 10,),
+                            GestureDetector(
+                              onTap: _openPrivacyPolicy,
+                              child: Text(localizations.privacyPolicy, style: TextStyle(fontWeight: Common.weight, fontSize: Common.h3, color: Common.light, decoration: TextDecoration.underline),),
+                            ),
                           ],
                         ),
                       ),

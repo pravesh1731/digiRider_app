@@ -11,6 +11,7 @@ import 'package:pdf/pdf.dart';
 import '../global/Common.dart';
 import 'package:flutter/services.dart' show rootBundle, consolidateHttpClientResponseBytes;
 import 'package:printing/printing.dart';
+import '../global/l10n.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 
@@ -91,7 +92,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
   final total = cartValue + commission; // Total Amount includes commission
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Trip Completed',style: TextStyle(color: Colors.white),),
+        title: Text(context.l10n.tripCompleted,style: TextStyle(color: Colors.white),),
         backgroundColor: Colors.black,
         elevation: 0,
       ),
@@ -114,7 +115,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
                         children: [
                           Icon(Icons.check_circle, color: Colors.green, size: 32),
                           SizedBox(width: 10),
-                          Text('Trip Completed!', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                          Text(context.l10n.tripCompletedTitle, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                         ],
                       ),
                       SizedBox(height: 18),
@@ -126,7 +127,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Pickup Location', style: theme.textTheme.bodySmall),
+                                Text(context.l10n.pickupLocation, style: theme.textTheme.bodySmall),
                                 Text(widget.pickupLocation, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                               ],
                             ),
@@ -142,7 +143,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Destination', style: theme.textTheme.bodySmall),
+                                Text(context.l10n.destination, style: theme.textTheme.bodySmall),
                                 Text(widget.destinationLocation, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
                               ],
                             ),
@@ -153,7 +154,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
                       Row(
                         children: [
                           SizedBox(width: 16),
-                          Text('Total Amount', style: theme.textTheme.bodySmall),
+                          Text(context.l10n.totalAmount, style: theme.textTheme.bodySmall),
                           SizedBox(width: 8),
                           // Show total (cart + commission) as Total Amount
                           Text('₹ $total', style: theme.textTheme.titleLarge?.copyWith(color: Colors.green.shade700, fontWeight: FontWeight.bold)),
@@ -164,7 +165,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
                       Row(
                         children: [
                           SizedBox(width: 16),
-                          Text('Cart Value', style: theme.textTheme.bodySmall),
+                          Text(context.l10n.cartValueLabel, style: theme.textTheme.bodySmall),
                           SizedBox(width: 8),
                           Text('₹$cartValue + ₹$commission = ₹${widget.couponTotal ?? (cartValue + commission)}', style: theme.textTheme.bodyMedium?.copyWith(color: Colors.green)),
                         ],
@@ -173,7 +174,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
                       SizedBox(height: 18),
                       Divider(),
                       SizedBox(height: 10),
-                      Text('Scan to Pay', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(context.l10n.scanToPay, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                       SizedBox(height: 10),
                       Center(
                         child: isLoading
@@ -312,17 +313,17 @@ class _TripCompletePageState extends State<TripCompletePage> {
                           final file = File('${dir.path}/trip_invoice_${now.millisecondsSinceEpoch}.pdf');
                           await file.writeAsBytes(await pdf.save());
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Invoice downloaded: ${file.path}')),
+                            SnackBar(content: Text(context.l10n.invoiceDownloaded(file.path))),
                           );
                           await OpenFile.open(file.path);
                         } catch (e) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Failed to download invoice: $e')),
+                            SnackBar(content: Text(context.l10n.invoiceDownloadFailed(e.toString()))),
                           );
                         }
                       },
                       icon: Icon(Icons.download,color: Colors.white,),
-                      label: Text('Download Invoice',style: TextStyle(color: Colors.white,fontSize: 14)),
+                      label: Text(context.l10n.downloadInvoice,style: TextStyle(color: Colors.white,fontSize: 14)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green.shade600,
                         padding: EdgeInsets.symmetric(vertical: 10),
@@ -347,7 +348,7 @@ class _TripCompletePageState extends State<TripCompletePage> {
                         ),
                         textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
-                      child: Text('Done',style: TextStyle(color: Colors.white,fontSize: 14),),
+                      child: Text(context.l10n.done,style: TextStyle(color: Colors.white,fontSize: 14),),
                     ),
                   ),
                 ],

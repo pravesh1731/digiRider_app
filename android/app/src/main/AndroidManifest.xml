@@ -43,14 +43,9 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Firebase Cloud Messaging -->
-        <service
-            android:name="com.google.firebase.messaging.FirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
+        <!-- Firebase Cloud Messaging: the firebase_messaging plugin registers its own
+             MESSAGING_EVENT service. Do not declare another one here, or Flutter's
+             onMessage / background handler stop receiving messages. -->
 
         <!-- Firebase Cloud Messaging default icon and color -->
         <meta-data
@@ -59,7 +54,7 @@
         
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
-            android:resource="@android:color/white" />
+            android:resource="@color/notification_accent" />
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"

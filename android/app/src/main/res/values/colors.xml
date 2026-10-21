@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tint for the notification small icon (matches the app's black theme) -->
+    <color name="notification_accent">#FF000000</color>
+</resources>

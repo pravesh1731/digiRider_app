@@ -6,6 +6,8 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../global/l10n.dart';
+import '../global/my_app_state.dart';
 import '../utils/show_exit_dialog.dart';
 
 
@@ -44,7 +46,7 @@ class _LandingPageState extends State<LandingPage> {
           title: Padding(
             padding: const EdgeInsets.only(left: 0),
             child: Text(
-              "Digital Rider",
+              context.l10n.appName,
               style: TextStyle(fontSize: 20, fontFamily: 'bold'),
             ),
           ),
@@ -54,6 +56,8 @@ class _LandingPageState extends State<LandingPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _languageToggle(),
+                  SizedBox(width: 4),
                   GestureDetector(
                     onTap: () => {
                       Navigator.push(context, MaterialPageRoute(builder: (context) => GoogleLoginPage(isSignUp: true),),),
@@ -69,7 +73,7 @@ class _LandingPageState extends State<LandingPage> {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                           child: Text(
-                            "Sign Up",
+                            context.l10n.signUp,
                             style: TextStyle(
                               fontSize: Common.h2,
                               fontFamily: 'bold',
@@ -96,7 +100,7 @@ class _LandingPageState extends State<LandingPage> {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                           child: Text(
-                            "Login",
+                            context.l10n.login,
                             style: TextStyle(
                               fontSize: Common.h2,
                               fontFamily: 'bold',
@@ -131,28 +135,28 @@ class _LandingPageState extends State<LandingPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _buildSectionTitle1("Welcome to Digital Rider"),
+                      _buildSectionTitle1(context.l10n.welcomeToDigitalRider),
                       const SizedBox(height: 10),
                       Padding(
                         padding: EdgeInsets.zero,
                         child: _buildHeroSection(),
                       ),
                       const SizedBox(height: 20),
-                      _buildSectionTitle("Where Do We Get Orders"),
+                      _buildSectionTitle(context.l10n.whereDoWeGetOrders),
                       const SizedBox(height: 16),
                       // _buildOrderSources(),
                       const OrderSourcesSection(),
 
                       const SizedBox(height: 10),
-                      _buildSectionTitle("Onboarding Process"),
+                      _buildSectionTitle(context.l10n.onboardingProcess),
                       const SizedBox(height: 16),
                       _buildOnboardingSteps(),
                       const SizedBox(height: 20),
-                      _buildSectionTitle("Benefits of Being a Digital Rider"),
+                      _buildSectionTitle(context.l10n.benefitsTitle),
                       const SizedBox(height: 20),
                       _buildBenefits(),
                       const SizedBox(height: 20),
-                      _buildSectionTitle("About Us"),
+                      _buildSectionTitle(context.l10n.aboutUs),
                       const SizedBox(height: 12),
                       Container(
                         width: double.infinity,
@@ -171,9 +175,9 @@ class _LandingPageState extends State<LandingPage> {
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
+                          children: [
                             Text(
-                              "We empower businesses by connecting them with reliable riders for seamless order fulfillment and delivery.",
+                              context.l10n.aboutUsText,
                               textAlign: TextAlign.left,
                               style: TextStyle(
                                 fontSize: 14,
@@ -203,6 +207,25 @@ class _LandingPageState extends State<LandingPage> {
     );
   }
 
+  Widget _languageToggle() {
+    final myAppState = context.findAncestorStateOfType<MyAppState>();
+    final isHindi = Localizations.localeOf(context).languageCode == 'hi';
+    return GestureDetector(
+      onTap: () => myAppState?.setLocale(Locale(isHindi ? 'en' : 'hi')),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: Common.secondary),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          isHindi ? 'EN' : 'हिं',
+          style: TextStyle(fontSize: Common.h2, fontFamily: 'bold', color: Common.secondary),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeroSection() {
     return Card(
       elevation: 6,
@@ -227,22 +250,22 @@ class _LandingPageState extends State<LandingPage> {
                   SizedBox(height: 6,),
                   _featureRow(
                     icon: Icons.currency_rupee,
-                    title: "Earn 1000 per day",
-                    desc: "Daily earning potential with reliable orders.",
+                    title: context.l10n.earnPerDay,
+                    desc: context.l10n.earnPerDayDesc,
                     color: Colors.green,
                   ),
                   const SizedBox(height: 12),
                   _featureRow(
                     icon: Icons.directions_bike,
-                    title: "Drive Any Vehicle",
-                    desc: "Auto, Bike, Car, or Taxi — earn with what you have.",
+                    title: context.l10n.driveAnyVehicle,
+                    desc: context.l10n.driveAnyVehicleDesc,
                     color: Colors.indigo,
                   ),
                   const SizedBox(height: 12),
                   _featureRow(
                     icon: Icons.check_circle,
-                    title: "3-Step Onboarding",
-                    desc: "Start earning quickly with our fast onboarding.",
+                    title: context.l10n.threeStepOnboarding,
+                    desc: context.l10n.threeStepOnboardingDesc,
                     color: Colors.purple,
                   ),
                 ],
@@ -350,22 +373,20 @@ class _LandingPageState extends State<LandingPage> {
   Widget _buildOnboardingSteps() {
     final List<Map<String, dynamic>> steps = [
       {
-        "title": "Basic Info",
-        "desc":
-            "Provide your basic information including name, contact details, and address.",
+        "title": context.l10n.basicInfo,
+        "desc": context.l10n.basicInfoDesc,
         "icon": Icons.person,
         "color": Colors.indigo,
       },
       {
-        "title": "Documents",
-        "desc": "Upload Aadhar, Driving License, Payment QR and Profile Image.",
+        "title": context.l10n.documents,
+        "desc": context.l10n.documentsDesc,
         "icon": Icons.file_copy,
         "color": Colors.purple,
       },
       {
-        "title": "Verification",
-        "desc":
-            "We’ll notify you once your documents are verified. Physical card is given.",
+        "title": context.l10n.verification,
+        "desc": context.l10n.verificationDesc,
         "icon": Icons.verified_user,
         "color": Colors.pink,
       },
@@ -436,38 +457,38 @@ class _LandingPageState extends State<LandingPage> {
   Widget _buildBenefits() {
     final List<Map<String, dynamic>> benefits = [
       {
-        "title": "Flexible Schedule",
-        "desc": "Freedom to choose your working hours.",
+        "title": context.l10n.flexibleSchedule,
+        "desc": context.l10n.flexibleScheduleDesc,
         "icon": Icons.schedule,
         "color": Colors.indigo,
       },
       {
-        "title": "Competitive Earnings",
-        "desc": "Earn more with bonuses and incentives.",
+        "title": context.l10n.competitiveEarnings,
+        "desc": context.l10n.competitiveEarningsDesc,
         "icon": Icons.monetization_on,
         "color": Colors.purple,
       },
       {
-        "title": "Regular Orders",
-        "desc": "Consistent income from steady orders.",
+        "title": context.l10n.regularOrders,
+        "desc": context.l10n.regularOrdersDesc,
         "icon": Icons.list_alt,
         "color": Colors.pink,
       },
       {
-        "title": "Supportive Community",
-        "desc": "Rider support system always ready.",
+        "title": context.l10n.supportiveCommunity,
+        "desc": context.l10n.supportiveCommunityDesc,
         "icon": Icons.people_alt,
         "color": Colors.blue,
       },
       {
-        "title": "Training and Development",
-        "desc": "Improve your skills and stay updated.",
+        "title": context.l10n.training,
+        "desc": context.l10n.trainingDesc,
         "icon": Icons.school,
         "color": Colors.teal,
       },
       {
-        "title": "Health and Safety",
-        "desc": "We prioritize your health and safety.",
+        "title": context.l10n.healthSafety,
+        "desc": context.l10n.healthSafetyDesc,
         "icon": Icons.health_and_safety,
         "color": Colors.green,
       },
@@ -601,7 +622,7 @@ class _LandingPageState extends State<LandingPage> {
         children: [
           // Heading
           Text(
-            "Digital Rider",
+            context.l10n.appName,
             style: TextStyle(
               fontSize: 18,
               fontFamily: 'bold',
@@ -660,9 +681,9 @@ class _LandingPageState extends State<LandingPage> {
             spacing: 12,
             runSpacing: 8,
             children: [
-              _footerChip(Icons.mail_outline, "Newsletter", () => _launchUrl("https://digistall.substack.com/"),),
-              _footerChip(Icons.privacy_tip_outlined, "Privacy Policy", () => _launchUrl("https://gotan.in/privacy-policy-rider"),),
-              _footerChip(Icons.article_outlined, "Terms & Conditions", () => _launchUrl("https://digistall.in/terms_and_conditions"),),
+              _footerChip(Icons.mail_outline, context.l10n.newsletter, () => _launchUrl("https://digistall.substack.com/"),),
+              _footerChip(Icons.privacy_tip_outlined, context.l10n.privacyPolicy, () => _launchUrl("https://gotan.in/privacy-policy-rider"),),
+              _footerChip(Icons.article_outlined, context.l10n.terms, () => _launchUrl("https://digistall.in/terms_and_conditions"),),
             ],
           ),
 
@@ -799,25 +820,25 @@ class _OrderSourcesSectionState extends State<OrderSourcesSection>
     return Column(
       children: [
         _buildAnimatedStepCard(
-          title: "Orders from Gotan Store app",
+          title: context.l10n.ordersFromGotanStore,
           expanded: _expanded1,
           onTap: () => _toggleExpanded(1),
           controller: _controller1,
           children: [
-            _buildSubItem("Pick and Drop Person", Colors.indigo, Colors.blue),
-            _buildSubItem("Pick and Drop Parcel", Colors.purple, Colors.pink),
+            _buildSubItem(context.l10n.pickDropPerson, Colors.indigo, Colors.blue),
+            _buildSubItem(context.l10n.pickDropParcel, Colors.purple, Colors.pink),
             SizedBox(height: 15,),
           ],
         ),
         const SizedBox(height: 2),
         _buildAnimatedStepCard(
-          title: "Orders from Digistall",
+          title: context.l10n.ordersFromDigistall,
           expanded: _expanded2,
           onTap: () => _toggleExpanded(2),
           controller: _controller2,
           children: [
             _buildSubItem(
-              "Deliver Digistall Store Order and Earn commission",
+              context.l10n.deliverDigistallOrders,
               Colors.green,
               Colors.teal,
             ),

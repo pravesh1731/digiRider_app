@@ -8,10 +8,11 @@ import 'package:digirider/global/Common.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../NavMain.dart';
+import '../global/l10n.dart';
+import '../services/notification_service.dart';
 import '../utils/bottomSnackBar.dart';
 
 class DocumentUploadPage extends StatefulWidget {
@@ -22,51 +23,21 @@ class DocumentUploadPage extends StatefulWidget {
 }
 
 class _DocumentUploadPageState extends State<DocumentUploadPage> {
-  File? _licenseFile;
-  File? _qrCodeFile;
+  // Multipart field name -> picked file. licence and qrcode are required by api/rider/adv,
+  // aadhaar and profile are optional (same as the website's signup step).
+  final Map<String, File?> _files = {'licence': null, 'qrcode': null, 'aadhaar': null, 'profile': null};
   bool _isLoading = false;
 
-  Future<bool> _requestStoragePermission() async {
-    if (Platform.isAndroid) {
-      if (await Permission.storage.request().isGranted) {
-        return true;
-      }
-
-      // Android 13+ granular media permissions
-      if (await Permission.photos.request().isGranted ||
-          await Permission.mediaLibrary.request().isGranted) {
-        return true;
-      }
-
-      return false;
-    } else if (Platform.isIOS) {
-      // Optional: on iOS, file picker doesn't need permission for picker
-      return true;
-    }
-    return false;
-  }
-
-
-  Future<void> _pickFile(bool isLicense) async {
-    bool permissionGranted = await _requestStoragePermission();
-
-    if (!permissionGranted) {
-      getSnackBar(context, "Permission denied. Cannot access files.", Colors.orange, 2);
-      return;
-    }
-
+  Future<void> _pickFile(String field) async {
+    // The system file picker does not need storage permission.
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
+      allowedExtensions: field == 'profile' ? ['jpg', 'jpeg', 'png'] : ['jpg', 'jpeg', 'png', 'pdf'],
     );
 
     if (result != null && result.files.single.path != null) {
       setState(() {
-        if (isLicense) {
-          _licenseFile = File(result.files.single.path!);
-        } else {
-          _qrCodeFile = File(result.files.single.path!);
-        }
+        _files[field] = File(result.files.single.path!);
       });
     }
   }
@@ -90,8 +61,9 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
   }
 
   void _onNextStep() async {
-    if (_licenseFile == null || _qrCodeFile == null) {
-      getSnackBar(context, "Please upload both documents.", Colors.orange, 2);
+    final l10n = context.l10n;
+    if (_files['licence'] == null || _files['qrcode'] == null) {
+      getSnackBar(context, l10n.uploadRequiredDocuments, Colors.orange, 2);
       return;
     }
 
@@ -108,56 +80,67 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
 
       request.fields['email'] = email;
 
-      request.files.add(await http.MultipartFile.fromPath(
-        'licence',
-        _licenseFile!.path,
-        contentType: _getMediaType(_licenseFile!.path),
-      ));
-
-      request.files.add(await http.MultipartFile.fromPath(
-        'qrcode',
-        _qrCodeFile!.path,
-        contentType: _getMediaType(_qrCodeFile!.path),
-      ));
+      for (final entry in _files.entries) {
+        final file = entry.value;
+        if (file == null) continue;
+        request.files.add(await http.MultipartFile.fromPath(
+          entry.key,
+          file.path,
+          contentType: _getMediaType(file.path),
+        ));
+      }
 
       var response = await request.send();
+      final responseBody = await response.stream.bytesToString();
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final responseBody = await response.stream.bytesToString();
-        final res = jsonDecode(responseBody);
+        final data = jsonDecode(responseBody)['data'] ?? {};
 
         await prefs.setBool('isLoggedIn', true);
-        await prefs.setString('licence', res['data']['licence'] ?? '');
-        await prefs.setString('qrcode', res['data']['qrcode'] ?? '');
+        await prefs.setString('licence', data['licence'] ?? '');
+        await prefs.setString('qrcode', data['qrcode'] ?? '');
+        await prefs.setString('aadhaar', data['aadhaar'] ?? '');
+        await prefs.setString('profile', data['profile'] ?? '');
+        await prefs.setString('userStatus', data['userStatus'] ?? 'Adv');
+        await NotificationService().syncToken();
+        if (!mounted) return;
 
-        getSnackBar(context, "Login successful!", Colors.green, 0);
+        getSnackBar(context, l10n.loginSuccessful, Colors.green, 0);
 
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
             builder: (context) => NavMain(initialIndex: 1),
           ),
+          (route) => false,
         );
       } else {
-        getSnackBar(context, "Failed to upload documents", Colors.orange, 2);
+        String message = l10n.uploadFailed;
+        try {
+          message = jsonDecode(responseBody)['message'] ?? message;
+        } catch (_) {}
+        getSnackBar(context, message, Colors.orange, 2);
       }
     } catch (e) {
-      getSnackBar(context, "An error occurred. Please try again.", Colors.redAccent, 2);
+      if (mounted) getSnackBar(context, l10n.errorTryAgain, Colors.redAccent, 2);
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
 
 
 
-  Widget _buildUploadField(String label, bool isLicense) {
-    final isUploaded = isLicense ? _licenseFile != null : _qrCodeFile != null;
+  Widget _buildUploadField(String label, String field) {
+    final file = _files[field];
 
     return InkWell(
-      onTap: () => _pickFile(isLicense),
+      onTap: () => _pickFile(field),
       child: Container(
         height: 50,
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -171,7 +154,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
           children: [
             Expanded(
               child: Text(
-                isUploaded ? "Uploaded: ${isLicense ? _licenseFile!.path.split('/').last : _qrCodeFile!.path.split('/').last}" : label,
+                file != null ? context.l10n.uploadedFile(file.path.split('/').last) : label,
                 style: TextStyle(
                   fontFamily: 'bold',
                   fontSize: Common.h2,
@@ -181,7 +164,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                 maxLines: 1,
               ),
             ),
-            Icon(Icons.upload, color: Common.secondary),
+            Icon(file != null ? Icons.check_circle : Icons.upload, color: file != null ? Colors.green : Common.secondary),
           ],
         ),
       ),
@@ -223,6 +206,8 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12.0),
                   child: Center(
+                    child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(vertical: 60),
                     child: Card(
                       elevation: 4,
                       color: Common.primary,
@@ -235,7 +220,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              "Upload your documents",
+                              context.l10n.uploadYourDocuments,
                               style: TextStyle(
                                 fontFamily: 'bold',
                                 fontSize: 20,
@@ -244,12 +229,16 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                               ),
                             ),
                             SizedBox(height: 20),
-                            _buildUploadField("Upload license", true),
+                            _buildUploadField(context.l10n.uploadLicense, 'licence'),
                             SizedBox(height: 15),
-                            _buildUploadField("Upload QR code", false),
+                            _buildUploadField(context.l10n.uploadQrCode, 'qrcode'),
+                            SizedBox(height: 15),
+                            _buildUploadField(context.l10n.uploadAadhaar, 'aadhaar'),
+                            SizedBox(height: 15),
+                            _buildUploadField(context.l10n.uploadProfilePhoto, 'profile'),
                             SizedBox(height: 20),
                             InkWell(
-                              onTap: _onNextStep,
+                              onTap: _isLoading ? null : _onNextStep,
                               child: Container(
                                 width: double.infinity,
                                 height: 50,
@@ -272,7 +261,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                                         ),
                                       ],
                                     ): Text(
-                                    "Upload",
+                                    context.l10n.upload,
                                     style: TextStyle(
                                       fontFamily: 'bold',
                                       fontSize: Common.h2,
@@ -291,7 +280,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                                 borderRadius: BorderRadius.circular(5),
                               ),
                               child: Text(
-                                "All documents must be clear and readable. Upload only JPG, PNG, or PDF files.",
+                                context.l10n.documentsHint,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontFamily: 'bold',
@@ -304,6 +293,7 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
                           ],
                         ),
                       ),
+                    ),
                     ),
                   ),
                 ),

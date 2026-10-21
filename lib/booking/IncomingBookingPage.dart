@@ -13,8 +13,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../global/Common.dart';
 import 'package:http/http.dart' as http;
 
+import '../global/l10n.dart';
 import '../providers/NotificationProvider.dart';
 import '../providers/trip_provider.dart';
+import '../services/active_orders.dart';
+import '../services/notification_service.dart';
 import '../utils/_TimedSnackBar.dart';
 import '../utils/bottomSnackBar.dart';
 import '../utils/show_exit_dialog.dart';
@@ -46,6 +49,8 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
 
   // Commission is now always calculated from coupontotal and totalCartValue in the order data
 
+  StreamSubscription? _messageSub;
+
   void filterRidesAuto() async {
     final filtered = await _fetchAllBookings();
     if (!mounted) return;
@@ -60,6 +65,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
       _isLoading = true;
     });
     final filtered = await _fetchAllBookings();
+    if (!mounted) return;
     setState(() {
       _orders = _sortOrdersByLatest(filtered);
       _isLoading = false;
@@ -69,39 +75,36 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
 
   Future<List<dynamic>> _fetchAllBookings() async {
     await _loadSharedPrefs();
-    print('=== FETCHING ORDERS FOR RIDER ===');
-    print('Rider VehicleType: $vehicleType');
-    print('Rider City: $cityName');
-    print('Rider Email: $email');
-    
+
+    final city = Uri.encodeQueryComponent(cityName);
     final endpoints = [
-      {'endpoint': 'api/rider/dashboard?vehicleType=$vehicleType&cityName=$cityName', 'type': 'Rider Orders', 'order': 'filteredOrders', 'post': 'api/rider/acceptriderorder'},
-      {'endpoint': 'api/parcel/dashboard?cityName=$cityName', 'type': 'Parcel Orders', 'order': 'parcelOrders', 'post': 'api/parcel/acceptriderorder'},
+      {'endpoint': 'api/rider/dashboard?vehicleType=${Uri.encodeQueryComponent(vehicleType)}&cityName=$city', 'type': 'Rider Orders', 'order': 'filteredOrders', 'post': 'api/rider/acceptriderorder'},
+      {'endpoint': 'api/parcel/dashboard?cityName=$city', 'type': 'Parcel Orders', 'order': 'parcelOrders', 'post': 'api/parcel/acceptriderorder'},
       {'endpoint': 'api/digiorder/getDigiOrder', 'type': 'Digistall Orders', 'order': 'DigiOrders', 'post': 'api/digiorder/acceptedByRider'},
     ];
-    print('--- Fetching from ${endpoints.length} endpoints ---');
-    List<dynamic> allOrders = [];
-    for (var ep in endpoints) {
-      final url = Uri.parse('${Common.baseUrl}${ep['endpoint']}');
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final orders = data[ep['order']] ?? [];
+
+    // One failing backend must not hide the orders from the other two.
+    final results = await Future.wait(endpoints.map((ep) async {
+      try {
+        final response = await http.get(Uri.parse('${Common.baseUrl}${ep['endpoint']}'));
+        if (response.statusCode != 200) return <dynamic>[];
+        final orders = jsonDecode(response.body)[ep['order']];
+        if (orders is! List) return <dynamic>[];
         for (var o in orders) {
-          print('OrderType:${ep['type']} | vehicleType:${o['vehicleType']} | _id:${o['_id']}');
           o['orderType'] = ep['type'];
           o['endpointPost'] = ep['post'];
-          allOrders.add(o);
         }
+        return orders;
+      } catch (e) {
+        debugPrint('Error fetching ${ep['type']}: $e');
+        return <dynamic>[];
       }
-    }
-    
-    // Filter orders based on rider's vehicle type using helper function
-    print('--- Filtering orders for vehicleType: $vehicleType ---');
-    allOrders = allOrders.where((order) => _shouldIncludeOrder(order)).toList();
-    
-    print('--- Final filtered orders count: ${allOrders.length} ---');
-    return allOrders;
+    }));
+
+    return results
+        .expand((orders) => orders)
+        .where((order) => _shouldIncludeOrder(order))
+        .toList();
   }
 
   List<dynamic> _sortOrdersByLatest(List<dynamic> orders) {
@@ -131,108 +134,60 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
   riderId = prefs.getString('riderId') ?? '';
   licence = prefs.getString('licence') ?? '';
   qrcode = prefs.getString('qrcode') ?? '';
-  
-  // Validate and log the loaded vehicle type
-  _validateVehicleType();
+
+  if (!['Bike', 'Auto', 'Car'].contains(vehicleType)) {
+    vehicleType = 'Bike';
   }
-  
-  void _validateVehicleType() {
-    if (vehicleType.isEmpty) {
-      print('🔄 VehicleType not loaded yet, skipping validation');
-      return;
-    }
-    
-    final validVehicleTypes = ['Bike', 'Auto', 'Car'];
-    if (!validVehicleTypes.contains(vehicleType)) {
-      print('⚠️  WARNING: Invalid vehicleType "$vehicleType". Valid types are: ${validVehicleTypes.join(", ")}');
-      print('⚠️  Defaulting to "Bike"');
-      vehicleType = 'Bike';
-    } else {
-      print('✅ Valid vehicleType detected: $vehicleType');
-    }
   }
-  
+
   bool _shouldIncludeOrder(Map<String, dynamic> order) {
     final orderType = order['orderType'] as String?;
-    final orderVehicleType = order['vehicleType'] as String?;
-    
-    // If rider's vehicle type is not loaded yet, include all orders to avoid errors
-    if (vehicleType.isEmpty) {
-      print('🔄 VehicleType not loaded, including all orders temporarily');
-      return true;
-    }
-    
-    // Always include Digistall and Parcel orders for all riders
-    if (orderType == 'Digistall Orders' || orderType == 'Parcel Orders') {
-      print('✅ Including $orderType order: ${order['_id']} (always included)');
-      return true;
-    }
-    
-    // For Rider Orders, match vehicle type
-    if (orderType == 'Rider Orders') {
-      bool shouldInclude = (orderVehicleType == vehicleType);
-      String reason = shouldInclude 
-          ? 'vehicle types match' 
-          : 'vehicle type mismatch (order: $orderVehicleType, rider: $vehicleType)';
-      print('${shouldInclude ? '✅' : '❌'} Rider Order ${order['_id']}: $reason');
-      return shouldInclude;
-    }
-    
-    // Unknown order type - don't include
-    print('❌ Unknown order type "$orderType" for order: ${order['_id']}');
+
+    // Digistall and Parcel orders are offered to every rider in the city
+    if (orderType == 'Digistall Orders' || orderType == 'Parcel Orders') return true;
+
+    // Ride requests must match the rider's vehicle type
+    if (orderType == 'Rider Orders') return order['vehicleType'] == vehicleType;
+
     return false;
   }
-  
+
   Map<String, int> _getOrderTypeCounts() {
     final counts = <String, int>{
       'Rider Orders': 0,
       'Parcel Orders': 0,
       'Digistall Orders': 0,
     };
-    
+
     for (var order in _orders) {
       final orderType = order['orderType'] as String?;
       if (orderType != null && counts.containsKey(orderType)) {
         counts[orderType] = counts[orderType]! + 1;
       }
     }
-    
+
     return counts;
   }
-
-  // Future<List<dynamic>> _fetchBookings() async {
-  //   await _loadSharedPrefs(); // Ensure prefs are loaded
-  //   final url = Uri.parse('${Common.baseUrl}api/rider/dashboard?vehicleType=$vehicleType&cityName=$cityName');
-  //
-  //   final response = await http.get(url);
-  //   if (response.statusCode == 200) {
-  //     final data = jsonDecode(response.body);
-  //     return data['filteredOrders'] ?? [];
-  //   } else {
-  //     throw Exception('Failed to load bookings');
-  //   }
-  // }
 
   @override
   void initState() {
     super.initState();
     _initializeData();
+    // A push for a new order arrived while the app is open: refresh right away instead of waiting for the poll.
+    _messageSub = NotificationService().onMessage.listen((_) => filterRidesAuto());
   }
-  
+
   void _initializeData() async {
-    // Load shared preferences first
-    await _loadSharedPrefs();
-    
-    // Then fetch bookings
     final orders = await _fetchAllBookings();
-    
+
     if (mounted) {
       setState(() {
         _orders = _sortOrdersByLatest(orders);
         _isLoading = false;
       });
     }
-    
+
+    if (!mounted) return;
     // Start periodic refresh
     _timer = Timer.periodic(Duration(seconds: 5), (timer) {
       filterRidesAuto();
@@ -242,6 +197,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
   @override
   void dispose() {
     _timer?.cancel(); // Cancel timer when widget is disposed
+    _messageSub?.cancel();
     super.dispose();
   }
   // int _currentIndex = 2;
@@ -278,7 +234,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                 border: Border.all(color: Colors.blue, width: 1),
               ),
               child: Text(
-                vehicleType.isEmpty ? 'Loading...' : vehicleType,
+                vehicleType.isEmpty ? context.l10n.loading : context.l10n.vehicleName(vehicleType),
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 12,
@@ -299,7 +255,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
               ),
             ),
           ],
-          title: Text('Incoming Bookings', style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color:Colors.white,),),
+          title: Text(context.l10n.incomingBookings, style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color:Colors.white,),),
         ),
         body: Container(
           child: Padding(
@@ -325,7 +281,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                             Icon(Icons.directions_car, color: Colors.blue, size: 16),
                             SizedBox(width: 8),
                             Text(
-                              'Vehicle Type: $vehicleType',
+                              context.l10n.vehicleTypeLabel(context.l10n.vehicleName(vehicleType)),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.blue[800],
@@ -334,7 +290,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                             ),
                             Spacer(),
                             Text(
-                              '${_orders.length} orders',
+                              context.l10n.ordersCount(_orders.length),
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Colors.blue[600],
@@ -358,7 +314,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                                     ),
                                   ),
                                   Text(
-                                    entry.key.replaceAll(' Orders', ''),
+                                    context.l10n.orderTypeName(entry.key),
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.blue[600],
@@ -391,7 +347,7 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
                           Positioned(
                             bottom: 30,
                             child: Text(
-                              'Nothing here yet',
+                              context.l10n.nothingHereYet,
                               style: TextStyle(
                                   fontSize: Common.h2,
                                   color: Colors.grey,
@@ -474,6 +430,73 @@ class _IncomingBookingPageState extends State<IncomingBookingPage> {
 
 }
 
+/// Accepts [order] for the logged-in rider through [endpointPost]. Returns true when the backend accepted it.
+Future<bool> _acceptIncomingOrder(BuildContext context, Map<String, dynamic> order, String endpointPost) async {
+  final l10n = context.l10n;
+  final prefs = await SharedPreferences.getInstance();
+  final email = prefs.getString('email') ?? '';
+
+  // Checked against the server so the limit holds after reinstalls or on a second phone.
+  final activeOrders = await ActiveOrders.fetch(email);
+  if (!context.mounted) return false;
+  if (activeOrders.length >= ActiveOrders.maxActiveOrders) {
+    showTimedSnackBar(context, l10n.finishCurrentRidesFirst, Duration(seconds: 3), 'below');
+    return false;
+  }
+
+  try {
+    final response = await http.post(
+      Uri.parse("${Common.baseUrl}$endpointPost"),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        "orderId": order['_id'],
+        "sellerPhone": order['sellerPhone'],
+        "riderData": {
+          "name": prefs.getString('name') ?? '',
+          "email": email,
+          "cityName": prefs.getString('cityName') ?? '',
+          "phoneNumber": prefs.getString('phoneNumber') ?? '',
+          "riderDomain": prefs.getString('riderDomain') ?? '',
+          "deviceToken": prefs.getString('deviceToken') ?? '',
+          "vehicleType": prefs.getString('vehicleType') ?? '',
+          "aadhaar": prefs.getString('aadhaar') ?? '',
+          "licence": prefs.getString('licence') ?? '',
+          "profile": prefs.getString('profile') ?? '',
+          "qrcode": prefs.getString('qrcode') ?? '',
+          "success": true,
+          "userStatus": prefs.getString('userStatus') ?? '',
+        }
+      }),
+    );
+    if (!context.mounted) return false;
+
+    Map<String, dynamic>? respBody;
+    try {
+      respBody = jsonDecode(response.body);
+    } catch (_) {}
+
+    if (response.statusCode == 200 && respBody?['success'] != false) {
+      await Provider.of<TripProvider>(context, listen: false).setActiveOrdersCount(activeOrders.length + 1);
+      if (!context.mounted) return true;
+      showTimedSnackBar(context, l10n.orderAccepted, Duration(seconds: 2), 'below');
+      Provider.of<NotificationProvider>(context, listen: false).showBadge();
+      return true;
+    }
+
+    final message = respBody?['message']?.toString() ?? '';
+    getSnackBar(
+      context,
+      message.contains('already been accepted') ? l10n.orderAlreadyTaken : (message.isNotEmpty ? message : l10n.acceptFailed),
+      Colors.red,
+      2,
+    );
+  } catch (e) {
+    debugPrint("Error accepting order: $e");
+    if (context.mounted) getSnackBar(context, l10n.somethingWentWrong, Colors.red, 2);
+  }
+  return false;
+}
+
 class _DigistallOrderCard extends StatefulWidget {
   // const _DigistallOrderCard({
   //   super.key,
@@ -507,9 +530,9 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
   String formatIndianDate(String input) {
     try {
       // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       // Convert to local time if needed (optional)
       final localTime = parsed.toLocal();
@@ -521,7 +544,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
@@ -530,83 +553,24 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
     final deliveryTime = order['deliveryTime'];
 
     if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
-      return 'Delivery time not set';
+      return context.l10n.deliveryTimeNotSet;
     }
 
     try {
       final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
       return DateFormat('dd MMM yyyy, hh:mm a').format(parsed); // Ex: 04 Jul 2025, 12:00 PM
     } catch (e) {
-      return 'Invalid delivery time';
+      return context.l10n.invalidDeliveryTime;
     }
   }
 
   Future<void> _acceptOrder() async {
-    final tripProvider = Provider.of<TripProvider>(context, listen: false);
-
-    // Check if user already has 2 active orders
-    if (tripProvider.activeOrdersCount >= 2) {
-      showTimedSnackBar(
-          context,
-          "You need to finish your current rides first",
-          Duration(seconds: 3),
-          'below'
-      );
-      return;
-    }
     setState(() => _isAccepting = true);
-
-    try {
-      final uri = Uri.parse("${Common.baseUrl}${widget.endpointPost}");
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          "orderId": widget.order['_id'],
-          "sellerPhone": widget.order['sellerPhone'],
-          "riderData": {
-            "name": widget.name,
-            "email": widget.email,
-            "cityName": widget.cityName,
-            "phoneNumber": widget.phoneNumber,
-            "riderDomain": widget.riderDomain,
-            "deviceToken": "", // Optional: update if using Firebase
-            "vehicleType": widget.vehicleType,
-            "aadhaar": "", // Or add if you store this
-            "licence": widget.licence,
-            "profile": "", // Or fetch if needed
-            "qrcode": widget.qrcode,
-            "success": true,
-            "userStatus": widget.userStatus,
-          }
-        }),
-      );
-
-      bool accepted = false;
-      Map<String, dynamic>? respBody;
-      try {
-        respBody = jsonDecode(response.body);
-      } catch (_) {}
-      if (response.statusCode == 200 || (respBody != null && (respBody['success'] == true || respBody['status'] == 'success'))) {
-        await tripProvider.incrementActiveOrders();
-        print(respBody ?? response.body);
-        setState(() => _isAccepting = false);
-        if (context.mounted) {
-          showTimedSnackBar(context, "Order Accepted Successfully", Duration(seconds: 2), 'below');
-          Provider.of<NotificationProvider>(context, listen: false).showBadge();
-        }
-        await Future.delayed(Duration(milliseconds: 500));
-        if (widget.onOrderAccepted != null) {
-          await widget.onOrderAccepted!(); // Wait for the callback including any delay
-        }
-      } else {
-        getSnackBar(context, "Failed to accept order. Please try again.", Colors.red, 2);
-      }
-    } catch (e) {
-      debugPrint("Error accepting order: $e");
-      getSnackBar(context, "Something went wrong.", Colors.red, 2);
-    } finally {
-      setState(() => _isAccepting = false);
+    final accepted = await _acceptIncomingOrder(context, widget.order, widget.endpointPost);
+    if (mounted) setState(() => _isAccepting = false);
+    if (accepted && widget.onOrderAccepted != null) {
+      await Future.delayed(Duration(milliseconds: 500));
+      await widget.onOrderAccepted!();
     }
   }
 
@@ -678,7 +642,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                   child: Align(
                     alignment: Alignment.topRight,
                     child: Text(
-                      'Delivery By - ${getFormattedDeliveryTime(widget.order)}',
+                      context.l10n.deliveryBy(getFormattedDeliveryTime(widget.order)),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: Common.weight2,
@@ -695,7 +659,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71),),
                 SizedBox(width: 16,),
-                Text('PICKUP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.pickup, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -717,8 +681,8 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
-                        // (order['pickupAddress'] ?? 'Pickup N/A').toString(),
-                        (widget.order['sellerAddress'] ?? 'Pickup N/A').toString(),
+                        // (order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
+                        (widget.order['sellerAddress'] ?? context.l10n.pickupNA).toString(),
                         style: TextStyle(fontSize: 12, fontWeight: Common.weight, color: Common.light),
                         softWrap: true,
                       ),
@@ -733,7 +697,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFFED9D60),),
                 SizedBox(width: 16,),
-                Text('DROP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.drop, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -742,8 +706,8 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
               child: Padding(
                 padding: const EdgeInsets.only(left: 40.0, right: 8),
                 child: Text(
-                  // order['deliveryAddress'] ?? 'Drop N/A',
-                  widget.order['address'] ?? 'Drop N/A',
+                  // order['deliveryAddress'] ?? context.l10n.dropNA,
+                  widget.order['address'] ?? context.l10n.dropNA,
                   style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),
                   softWrap: true,
                 ),
@@ -758,7 +722,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('CART VALUE', style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
+                      Text(context.l10n.cartValue, style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
                       SizedBox(height: 3,),
                       // Show cart value + commission = coupon total format
                       Text(
@@ -767,7 +731,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                       ),
                       SizedBox(height: 3,),
                       Text(
-                        'Commission: ₹$commission',
+                        context.l10n.commissionAmount('$commission'),
                         style: TextStyle(fontSize: Common.h3, fontWeight: FontWeight.bold, color: Colors.blue[800]),
                       ),
                     ],
@@ -792,13 +756,13 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                           if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
                           await launchUrl(Uri.parse(googleMapsUrl), mode: LaunchMode.externalApplication);
                           } else {
-                          getSnackBar(context, "Could not open Maps.", Colors.red, 2);
+                          getSnackBar(context, context.l10n.couldNotOpenMaps, Colors.red, 2);
                           }
                           // showTimedSnackBar(context, "Map opened.", Duration(seconds: 2), 'below');
                         },
                         icon: Icon(Icons.location_on_rounded, size: 16),
                         label: Text(
-                          'VIEW MAP',
+                          context.l10n.viewMap,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: Common.h4,
@@ -843,7 +807,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                         onPressed: _acceptOrder,
                         icon: Icon(Icons.check_circle_rounded, size: 16),
                         label: Text(
-                          'ACCEPT',
+                          context.l10n.accept,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: Common.h4,
@@ -909,9 +873,9 @@ class _OrderCardState extends State<_OrderCard> {
   String formatIndianDate(String input) {
     try {
       // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       // Convert to local time if needed (optional)
       final localTime = parsed.toLocal();
@@ -923,81 +887,17 @@ class _OrderCardState extends State<_OrderCard> {
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
   Future<void> _acceptOrder() async {
-    final tripProvider = Provider.of<TripProvider>(context, listen: false);
-
-    if (tripProvider.activeOrdersCount >= 2) {
-      showTimedSnackBar(
-          context,
-          "You need to finish your current rides first",
-          Duration(seconds: 3),
-          'below'
-      );
-      return;
-    }
-
     setState(() => _isAccepting = true);
-
-    try {
-      final uri = Uri.parse("${Common.baseUrl}${widget.endpointPost}");
-      final payload = {
-        "orderId": widget.order['_id'],
-        "sellerPhone": widget.order['sellerPhone'],
-        "riderData": {
-          "name": widget.name,
-          "email": widget.email,
-          "cityName": widget.cityName,
-          "phoneNumber": widget.phoneNumber,
-          "riderDomain": widget.riderDomain,
-          "deviceToken": "", // Optional: update if using Firebase
-          "vehicleType": widget.vehicleType,
-          "aadhaar": "", // Or add if you store this
-          "licence": widget.licence,
-          "profile": "", // Or fetch if needed
-          "qrcode": widget.qrcode,
-          "success": true,
-          "userStatus": widget.userStatus,
-        }
-      };
-      print('Accepting order POST to: $uri');
-      print('Payload: ' + jsonEncode(payload));
-      final response = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      );
-      print('Order accept response status: ${response.statusCode}');
-      print('Order accept response body: ${response.body}');
-
-      Map<String, dynamic>? respBody;
-      try {
-        respBody = jsonDecode(response.body);
-      } catch (_) {}
-      if (response.statusCode == 200 || (respBody != null && (respBody['success'] == true || respBody['status'] == 'success'))) {
-        print(respBody ?? response.body);
-        await tripProvider.incrementActiveOrders();
-        setState(() => _isAccepting = false);
-        if (context.mounted) {
-          showTimedSnackBar(context, "Order Accepted Successfully", Duration(seconds: 2), 'below');
-          // Show the badge
-          Provider.of<NotificationProvider>(context, listen: false).showBadge();
-        }
-        await Future.delayed(Duration(milliseconds: 500));
-        if (widget.onOrderAccepted != null) {
-          await widget.onOrderAccepted!();
-        }
-      } else {
-        getSnackBar(context, "Failed to accept order. Please try again.", Colors.red, 2);
-      }
-    } catch (e) {
-      debugPrint("Error accepting order: $e");
-      getSnackBar(context, "Something went wrong.", Colors.red, 2);
-    } finally {
-      setState(() => _isAccepting = false);
+    final accepted = await _acceptIncomingOrder(context, widget.order, widget.endpointPost);
+    if (mounted) setState(() => _isAccepting = false);
+    if (accepted && widget.onOrderAccepted != null) {
+      await Future.delayed(Duration(milliseconds: 500));
+      await widget.onOrderAccepted!();
     }
   }
 
@@ -1041,7 +941,7 @@ class _OrderCardState extends State<_OrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71),),
                 SizedBox(width: 16,),
-                Text('PICKUP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.pickup, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -1063,7 +963,7 @@ class _OrderCardState extends State<_OrderCard> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
-                        (widget.order['pickupAddress'] ?? 'Pickup N/A').toString(),
+                        (widget.order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
                         style: TextStyle(fontSize: 12, fontWeight: Common.weight, color: Common.light),
                         softWrap: true,
                       ),
@@ -1078,7 +978,7 @@ class _OrderCardState extends State<_OrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFFED9D60),),
                 SizedBox(width: 16,),
-                Text('DROP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.drop, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -1087,7 +987,7 @@ class _OrderCardState extends State<_OrderCard> {
               child: Padding(
                 padding: const EdgeInsets.only(left: 40.0, right: 8),
                 child: Text(
-                  widget.order['deliveryAddress'] ?? 'Drop N/A',
+                  widget.order['deliveryAddress'] ?? context.l10n.dropNA,
                   style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),
                   softWrap: true,
                 ),
@@ -1101,11 +1001,11 @@ class _OrderCardState extends State<_OrderCard> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       SizedBox(width: 5,),
-                      Text('TRIP DISTANCE', style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
+                      Text(context.l10n.tripDistance, style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
                       SizedBox(width: 10,),
                       Container(color: Common.light, height: 1, width: 10,),
                       SizedBox(width: 10,),
-                      Text(widget.order['distance'] ?? 'Distance N/A', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Common.light),),
+                      Text(widget.order['distance'] ?? context.l10n.distanceNA, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Common.light),),
                     ],
                   ),
                 ),
@@ -1124,7 +1024,7 @@ class _OrderCardState extends State<_OrderCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'TOTAL',
+                        context.l10n.total,
                         style: TextStyle(
                             fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'
                         ),
@@ -1162,12 +1062,12 @@ class _OrderCardState extends State<_OrderCard> {
                           if (await canLaunchUrl(Uri.parse(googleMapsUrl))) {
                             await launchUrl(Uri.parse(googleMapsUrl), mode: LaunchMode.externalApplication);
                           } else {
-                            getSnackBar(context, "Could not open Maps.", Colors.red, 2);
+                            getSnackBar(context, context.l10n.couldNotOpenMaps, Colors.red, 2);
                           }
                         },
                         icon: Icon(Icons.location_on_rounded, size: 16),
                         label: Text(
-                          'VIEW MAP',
+                          context.l10n.viewMap,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: Common.h4,
@@ -1212,7 +1112,7 @@ class _OrderCardState extends State<_OrderCard> {
                         onPressed: _acceptOrder,
                         icon: Icon(Icons.check_circle_rounded, size: 16),
                         label: Text(
-                          'ACCEPT',
+                          context.l10n.accept,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: Common.h4,

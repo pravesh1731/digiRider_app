@@ -1,20 +1,19 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:intl/intl.dart';
 import 'package:lottie/lottie.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import '../global/Common.dart';
+import '../global/l10n.dart';
 import '../providers/trip_provider.dart';
+import '../services/active_orders.dart';
 import '../utils/show_exit_dialog.dart';
 import 'TripFlowPage.dart';
-import 'package:http/http.dart' as http;
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -37,14 +36,17 @@ class _HomePageState extends State<HomePage> {
   void filterRidesAuto() async {
     final filtered = await _fetchAllBookings();
     if (!mounted) return;
+    final hasNewOrders = filtered.length > _orders.length;
     setState(() {
       _orders = _sortOrdersByLatest(filtered);
     });
-    _scrollToTop();
+    // Only jump to the top when a new order shows up, not on every poll.
+    if (hasNewOrders) _scrollToTop();
   }
 
   void filterRides() async {
     final filtered = await _fetchAllBookings();
+    if (!mounted) return;
     setState(() {
       _orders = _sortOrdersByLatest(filtered);
       _isLoading = false;
@@ -63,34 +65,12 @@ class _HomePageState extends State<HomePage> {
 
   Future<List<dynamic>> _fetchAllBookings() async {
     await _loadSharedPrefs();
-    const orderKey = 'data';
-    Map<String, dynamic> payload = {'email': email};
-    final endpoints = [
-      {'endpoint': 'api/rider/riderorderhistory', 'type': 'Rider Orders', 'post': 'api/rider/setriderstatus'},
-      {'endpoint': 'api/parcel/riderorderhistory', 'type': 'Parcel Orders', 'post': 'api/parcel/setriderstatus'},
-      {'endpoint': 'api/digiorder/orderStatus', 'type': 'Digistall Orders', 'post': 'api/digiorder/setorderStatus'},
-    ];
-    List<dynamic> allOrders = [];
-    for (var ep in endpoints) {
-      final url = Uri.parse('${Common.baseUrl}${ep['endpoint']}');
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(payload),
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final orders = data[orderKey];
-        if (orders is List) {
-          for (var o in orders) {
-            o['orderType'] = ep['type'];
-            o['endpointPost'] = ep['post'];
-            allOrders.add(o);
-          }
-        }
-      }
+    final orders = await ActiveOrders.fetch(email);
+    if (mounted) {
+      // Keep the accept limit in sync with what the server says is still active.
+      await Provider.of<TripProvider>(context, listen: false).setActiveOrdersCount(orders.length);
     }
-    return allOrders;
+    return orders;
   }
 
   Future<void> _loadSharedPrefs() async {
@@ -98,68 +78,6 @@ class _HomePageState extends State<HomePage> {
     vehicleType = prefs.getString('vehicleType') ?? '';
     cityName = prefs.getString('cityName') ?? '';
     email = prefs.getString('email') ?? '';
-  }
-
-  Future<void> checkNotificationPermission(BuildContext context) async {
-
-    var status = await Permission.notification.status;
-
-    if (status.isGranted) {
-      return;
-    }
-
-    // 👇 Request permission (this will show the system permission popup if possible)
-    var result = await Permission.notification.request();
-
-    // 👉 Only handle the case where the permission was asked and user denied it
-    if (result.isDenied) {
-      // Delay the dialog until the frame is built
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        showStyledPermissionDialog(
-          context: context,
-          title: "Notification Permission Needed",
-          message: "We use notifications to alert you about important updates. Please enable permission.",
-          // showSettingsButton: result.isPermanentlyDenied, // only show settings if needed
-        );
-      });
-    }
-  }
-
-  void showStyledPermissionDialog({
-    required BuildContext context,
-    required String title,
-    required String message,
-    // bool showSettingsButton = true,
-  }) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Common.secondary,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        titlePadding: EdgeInsets.only(top: 20, left: 24, right: 24),
-        contentPadding: EdgeInsets.only(left: 24, right: 24, top: 14, bottom: 24),
-        actionsPadding: EdgeInsets.only(right: 16, bottom: 16),
-        title: Text(
-          title,
-          style: TextStyle(fontWeight: Common.weight2, fontFamily: 'bold', fontSize: 18, color: Common.primary),
-        ),
-        content: SizedBox(
-          width: MediaQuery.of(context).size.width * 0.9,
-          child: Text(message, style: TextStyle(fontWeight: Common.weight2, fontFamily: 'bold', fontSize: Common.h2, color: Common.primary)),
-        ),
-        actions: [
-          OutlinedButton(
-            onPressed: () => Navigator.pop(context),
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Common.primary,
-              side: BorderSide(color: Common.primary),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-            ),
-            child: Text("Close", style: TextStyle(color: Common.secondary, fontFamily: 'bold',fontSize: Common.h2, fontWeight: Common.weight2)),
-          ),
-        ],
-      ),
-    );
   }
 
   void _scrollToTop() {
@@ -174,6 +92,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _fetchAllBookings().then((orders) {
+      if (!mounted) return;
       setState(() {
         _orders = _sortOrdersByLatest(orders);
         _isLoading = false;
@@ -183,96 +102,14 @@ class _HomePageState extends State<HomePage> {
     _timer = Timer.periodic(Duration(seconds: 5), (timer) {
       filterRidesAuto();
     });
-    checkNotificationPermission(context);
   }
 
   @override
   void dispose() {
     _timer?.cancel(); // Cancel timer when widget is disposed
+    _scrollController.dispose();
     super.dispose();
   }
-
-  Future<bool> logout() async {
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    final shouldExit = await showDialog<bool>(
-      context: context,
-      builder:
-          (_) => AlertDialog(
-            backgroundColor: Common.secondary,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            titlePadding: const EdgeInsets.only(
-              top: 20,
-              left: 24,
-              right: 24,
-              bottom: 15,
-            ),
-            contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 15),
-            actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
-            title: Text(
-              "Exit App",
-              style: TextStyle(
-                fontWeight: Common.weight,
-                color: Common.primary,
-                fontSize: Common.title,
-              ),
-            ),
-            content: SizedBox(
-              width: screenWidth * 0.9,
-              child: Text(
-                "Are you sure you want to exit?",
-                style: TextStyle(
-                  color: Common.primary,
-                  fontWeight: Common.weight,
-                  fontSize: Common.h2,
-                ),
-              ),
-            ),
-            actions: [
-              OutlinedButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Common.primary.withOpacity(0.4)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                child: Text(
-                  "Cancel",
-                  style: TextStyle(
-                    color: Common.primary,
-                    fontWeight: Common.weight,
-                    fontSize: Common.h2,
-                  ),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Common.primary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                child: Text(
-                  "Exit",
-                  style: TextStyle(
-                    color: Common.secondary,
-                    fontWeight: Common.weight,
-                    fontSize: Common.h2,
-                  ),
-                ),
-              ),
-            ],
-          ),
-    );
-
-    return shouldExit ?? false;
-  }
-
-  // int _currentIndex = 2;
 
   @override
   Widget build(BuildContext context) {
@@ -315,7 +152,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
           title: Text(
-            'Home',
+            context.l10n.home,
             style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color: Common.primary),
           ),
         ),
@@ -347,7 +184,7 @@ class _HomePageState extends State<HomePage> {
                                   Positioned(
                                     bottom: 30,
                                     child: Text(
-                                      'Nothing here yet',
+                                      context.l10n.nothingHereYet,
                                       style: TextStyle(
                                         fontSize: Common.h2,
                                         color: Colors.grey,
@@ -446,12 +283,12 @@ class _DigistallOrderCard extends StatelessWidget {
     return cart.toString();
   }
 
-  String formatIndianDate(String input) {
+  String formatIndianDate(BuildContext context, String input) {
     try {
       // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       // Convert to local time if needed (optional)
       final localTime = parsed.toLocal();
@@ -463,23 +300,23 @@ class _DigistallOrderCard extends StatelessWidget {
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
-  String getFormattedDeliveryTime(Map<String, dynamic> order) {
+  String getFormattedDeliveryTime(BuildContext context, Map<String, dynamic> order) {
     final deliveryBy = order['deliveryBy'];
     final deliveryTime = order['deliveryTime'];
 
     if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
-      return 'Delivery time not set';
+      return context.l10n.deliveryTimeNotSet;
     }
 
     try {
       final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
       return DateFormat('dd MMM yyyy, hh:mm a').format(parsed); // Ex: 04 Jul 2025, 12:00 PM
     } catch (e) {
-      return 'Invalid delivery time';
+      return context.l10n.invalidDeliveryTime;
     }
   }
 
@@ -517,7 +354,7 @@ class _DigistallOrderCard extends StatelessWidget {
                     Align(
                       alignment: Alignment.topRight,
                       child: Text(
-                        'Order #${order['_id']?.toString().substring(0, 8) ?? ''}',
+                        context.l10n.orderNumber(order['_id']?.toString().substring(0, 8) ?? ''),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: Common.weight2,
@@ -533,7 +370,7 @@ class _DigistallOrderCard extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.topRight,
                         child: Text(
-                          '${getFormattedDeliveryTime(order)}',
+                          '${getFormattedDeliveryTime(context, order)}',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: Common.weight2,
@@ -561,7 +398,7 @@ class _DigistallOrderCard extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.topLeft,
                         child: Text(
-                          'Product - ${order['productName'] ?? 'Unknown'}',
+                          context.l10n.productLabel(order['productName']?.toString() ?? context.l10n.unknown),
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -579,7 +416,7 @@ class _DigistallOrderCard extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.topRight,
                         child: Text(
-                          'Quantity - ${order['productCount']?.toString() ?? 'Unknown'}',
+                          context.l10n.quantityLabel(order['productCount']?.toString() ?? context.l10n.unknown),
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -605,7 +442,7 @@ class _DigistallOrderCard extends StatelessWidget {
                     ),
                     SizedBox(width: 16),
                     Text(
-                      'PICKUP',
+                      context.l10n.pickup,
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -631,8 +468,8 @@ class _DigistallOrderCard extends StatelessWidget {
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 12.0),
                           child: Text(
-                            // (order['pickupAddress'] ?? 'Pickup N/A').toString(),
-                            (order['sellerAddress'] ?? 'Pickup N/A').toString(),
+                            // (order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
+                            (order['sellerAddress'] ?? context.l10n.pickupNA).toString(),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: Common.weight,
@@ -657,7 +494,7 @@ class _DigistallOrderCard extends StatelessWidget {
                     ),
                     SizedBox(width: 16),
                     Text(
-                      'DROP',
+                      context.l10n.drop,
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -672,8 +509,8 @@ class _DigistallOrderCard extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(left: 40.0, right: 8),
                     child: Text(
-                      // order['deliveryAddress'] ?? 'Drop N/A',
-                      order['address'] ?? 'Drop N/A',
+                      // order['deliveryAddress'] ?? context.l10n.dropNA,
+                      order['address'] ?? context.l10n.dropNA,
                       style: TextStyle(
                         fontSize: Common.h3,
                         fontWeight: Common.weight,
@@ -696,7 +533,7 @@ class _DigistallOrderCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'CART VALUE',
+                            context.l10n.cartValue,
                             style: TextStyle(
                               fontSize: Common.h3,
                               fontWeight: Common.weight2,
@@ -716,7 +553,7 @@ class _DigistallOrderCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            'Total: ₹$total',
+                            context.l10n.totalAmountValue('$total'),
                             style: TextStyle(
                               fontSize: Common.h3,
                               fontWeight: FontWeight.bold,
@@ -737,7 +574,8 @@ class _DigistallOrderCard extends StatelessWidget {
                             "trip_${order['_id']}",
                           ),
                           builder: (context, snapshot) {
-                            final bool showProgress = snapshot.data == true;
+                            final bool showProgress = snapshot.data == true ||
+                                order['riderStatus']?.toString().toLowerCase() == 'in transit';
 
                             return ElevatedButton(
                               onPressed: () {
@@ -775,8 +613,8 @@ class _DigistallOrderCard extends StatelessWidget {
                                   Flexible(
                                     child: Text(
                                       showProgress
-                                          ? 'PROGRESS'
-                                          : 'VIEW DETAILS',
+                                          ? context.l10n.progress
+                                          : context.l10n.viewDetails,
                                       style: TextStyle(
                                         fontSize: Common.h4,
                                         fontWeight: Common.weight,
@@ -833,12 +671,12 @@ class _OrderCard extends StatelessWidget {
 
   const _OrderCard({Key? key, required this.order, required this.endpointPost})
     : super(key: key);
-  String formatIndianDate(String input) {
+  String formatIndianDate(BuildContext context, String input) {
     try {
       // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       // Convert to local time if needed (optional)
       final localTime = parsed.toLocal();
@@ -850,7 +688,7 @@ class _OrderCard extends StatelessWidget {
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
@@ -884,7 +722,7 @@ class _OrderCard extends StatelessWidget {
                     Align(
                       alignment: Alignment.topRight,
                       child: Text(
-                        'Order #${order['_id']?.toString().substring(0, 8) ?? ''}',
+                        context.l10n.orderNumber(order['_id']?.toString().substring(0, 8) ?? ''),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: Common.weight2,
@@ -900,7 +738,7 @@ class _OrderCard extends StatelessWidget {
                       child: Align(
                         alignment: Alignment.topRight,
                         child: Text(
-                          formatIndianDate(order['pickupTime']?.toString() ?? ''),
+                          formatIndianDate(context, order['pickupTime']?.toString() ?? ''),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: Common.weight2,
@@ -929,7 +767,7 @@ class _OrderCard extends StatelessWidget {
                           Align(
                             alignment: Alignment.topLeft,
                             child: Text(
-                              'Name',
+                              context.l10n.name,
                               style: TextStyle(
                                 fontSize: Common.h2,
                                 fontWeight: Common.weight2,
@@ -945,7 +783,7 @@ class _OrderCard extends StatelessWidget {
                           Align(
                             alignment: Alignment.topLeft,
                             child: Text(
-                              '${order['sellerName'] ?? 'Unknown'}',
+                              '${order['sellerName'] ?? context.l10n.unknown}',
                               style: TextStyle(
                                 fontSize: Common.h2,
                                 fontWeight: Common.weight2,
@@ -967,7 +805,7 @@ class _OrderCard extends StatelessWidget {
                           Align(
                             alignment: Alignment.topLeft,
                             child: Text(
-                              'Contact',
+                              context.l10n.contact,
                               style: TextStyle(
                                 fontSize: Common.h2,
                                 fontWeight: Common.weight2,
@@ -982,7 +820,7 @@ class _OrderCard extends StatelessWidget {
                           Align(
                             alignment: Alignment.topLeft,
                             child: Text(
-                              '${order['sellerPhone']?.toString() ?? 'Unknown'}',
+                              '${order['sellerPhone']?.toString() ?? context.l10n.unknown}',
                               style: TextStyle(
                                 fontSize: Common.h2,
                                 fontWeight: Common.weight2,
@@ -1009,7 +847,7 @@ class _OrderCard extends StatelessWidget {
                     ),
                     SizedBox(width: 16),
                     Text(
-                      'PICKUP',
+                      context.l10n.pickup,
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -1035,7 +873,7 @@ class _OrderCard extends StatelessWidget {
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 12.0),
                           child: Text(
-                            (order['pickupAddress'] ?? 'Pickup N/A').toString(),
+                            (order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: Common.weight,
@@ -1060,7 +898,7 @@ class _OrderCard extends StatelessWidget {
                     ),
                     SizedBox(width: 16),
                     Text(
-                      'DROP',
+                      context.l10n.drop,
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -1075,7 +913,7 @@ class _OrderCard extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(left: 40.0, right: 8),
                     child: Text(
-                      order['deliveryAddress'] ?? 'Drop N/A',
+                      order['deliveryAddress'] ?? context.l10n.dropNA,
                       style: TextStyle(
                         fontSize: Common.h3,
                         fontWeight: Common.weight,
@@ -1094,7 +932,7 @@ class _OrderCard extends StatelessWidget {
                         children: [
                           SizedBox(width: 5),
                           Text(
-                            'TRIP DISTANCE',
+                            context.l10n.tripDistance,
                             style: TextStyle(
                               fontSize: Common.h3,
                               fontWeight: Common.weight2,
@@ -1106,7 +944,7 @@ class _OrderCard extends StatelessWidget {
                           Container(color: Common.light, height: 1, width: 10),
                           SizedBox(width: 10),
                           Text(
-                            order['distance'] ?? 'Distance N/A',
+                            order['distance'] ?? context.l10n.distanceNA,
                             style: TextStyle(
                               fontSize: Common.h2,
                               fontWeight: Common.weight,
@@ -1131,7 +969,7 @@ class _OrderCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'TOTAL',
+                            context.l10n.total,
                             style: TextStyle(
                               fontSize: Common.h3,
                               fontWeight: Common.weight2,
@@ -1162,7 +1000,8 @@ class _OrderCard extends StatelessWidget {
                             "trip_${order['_id']}",
                           ),
                           builder: (context, snapshot) {
-                            final bool showProgress = snapshot.data == true;
+                            final bool showProgress = snapshot.data == true ||
+                                order['riderStatus']?.toString().toLowerCase() == 'in transit';
 
                             return ElevatedButton(
                               onPressed: () {
@@ -1200,8 +1039,8 @@ class _OrderCard extends StatelessWidget {
                                   Flexible(
                                     child: Text(
                                       showProgress
-                                          ? 'PROGRESS'
-                                          : 'VIEW DETAILS',
+                                          ? context.l10n.progress
+                                          : context.l10n.viewDetails,
                                       style: TextStyle(
                                         fontSize: Common.h4,
                                         fontWeight: Common.weight,

@@ -3,17 +3,28 @@ import '../global/Common.dart';
 import '../gen_l10n/app_localizations.dart';
 import '../main.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // Global navigator key for navigation from notifications
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 class MyAppState extends State<MyApp> {
-  Locale? locale = const Locale('hi'); // Set default to Hindi
+  static const String _localeKey = 'languageCode';
 
-  void setLocale(Locale newLocale) {
+  late Locale locale = widget.initialLocale;
+
+  /// The language the rider picked last time; Hindi by default.
+  static Future<Locale> loadSavedLocale() async {
+    final prefs = await SharedPreferences.getInstance();
+    return Locale(prefs.getString(_localeKey) ?? 'hi');
+  }
+
+  Future<void> setLocale(Locale newLocale) async {
     setState(() {
       locale = newLocale;
     });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_localeKey, newLocale.languageCode);
   }
 
   @override
@@ -63,7 +74,8 @@ class MyAppState extends State<MyApp> {
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  final Locale initialLocale;
+  const MyApp({super.key, this.initialLocale = const Locale('hi')});
 
   @override
   State<MyApp> createState() => MyAppState();

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../global/Common.dart'; // adjust path if needed
+import '../global/l10n.dart';
 
 Future<bool> showExitConfirmationDialogWhite(BuildContext context) async {
   final screenWidth = MediaQuery.of(context).size.width;
@@ -13,7 +14,7 @@ Future<bool> showExitConfirmationDialogWhite(BuildContext context) async {
       contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 15),
       actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
       title: Text(
-        "Exit App",
+        context.l10n.exitApp,
         style: TextStyle(
           fontWeight: Common.weight,
           color: Common.secondary,
@@ -23,7 +24,7 @@ Future<bool> showExitConfirmationDialogWhite(BuildContext context) async {
       content: SizedBox(
         width: screenWidth * 0.9,
         child: Text(
-          "Are you sure you want to exit?",
+          context.l10n.exitPrompt,
           style: TextStyle(
             color: Common.secondary,
             fontWeight: Common.weight,
@@ -41,7 +42,7 @@ Future<bool> showExitConfirmationDialogWhite(BuildContext context) async {
             ),
           ),
           child: Text(
-            "Cancel",
+            context.l10n.cancel,
             style: TextStyle(
               color: Common.secondary,
               fontWeight: Common.weight,
@@ -58,7 +59,7 @@ Future<bool> showExitConfirmationDialogWhite(BuildContext context) async {
             ),
           ),
           child: Text(
-            "Exit",
+            context.l10n.exit,
             style: TextStyle(
               color: Common.primary,
               fontWeight: Common.weight,
@@ -85,7 +86,7 @@ Future<bool> showExitConfirmationDialog(BuildContext context) async {
       contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 15),
       actionsPadding: const EdgeInsets.only(right: 16, bottom: 16),
       title: Text(
-        "Exit App",
+        context.l10n.exitApp,
         style: TextStyle(
           fontWeight: Common.weight,
           color: Common.primary,
@@ -95,7 +96,7 @@ Future<bool> showExitConfirmationDialog(BuildContext context) async {
       content: SizedBox(
         width: screenWidth * 0.9,
         child: Text(
-          "Are you sure you want to exit?",
+          context.l10n.exitPrompt,
           style: TextStyle(
             color: Common.primary,
             fontWeight: Common.weight,
@@ -113,7 +114,7 @@ Future<bool> showExitConfirmationDialog(BuildContext context) async {
             ),
           ),
           child: Text(
-            "Cancel",
+            context.l10n.cancel,
             style: TextStyle(
               color: Common.primary,
               fontWeight: Common.weight,
@@ -130,7 +131,7 @@ Future<bool> showExitConfirmationDialog(BuildContext context) async {
             ),
           ),
           child: Text(
-            "Exit",
+            context.l10n.exit,
             style: TextStyle(
               color: Common.secondary,
               fontWeight: Common.weight,

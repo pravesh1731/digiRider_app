@@ -35,6 +35,14 @@ android {
     }
 
     signingConfigs {
+        // Use the repo's debug.keystore so debug builds have a SHA-1 registered in
+        // Firebase; otherwise Google Sign-In fails with ApiException 10.
+        getByName("debug") {
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            storeFile = file("../../debug.keystore")
+            storePassword = "android"
+        }
         create("release") {
             keyAlias = "upload"
             keyPassword = "android"
@@ -44,6 +52,9 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false

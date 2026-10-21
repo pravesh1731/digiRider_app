@@ -20,12 +20,332 @@
   "cancel": "Cancel",
   "logout": "Logout",
   "logoutFailed": "Logout failed: {error}",
+  "@logoutFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
   "bike": "Bike",
   "auto": "Auto",
   "car": "Car",
-  "allowNotification": "Allow Notification",
+  "allowNotification": "Allow Notifications",
   "terms": "Terms & Conditions",
   "cityUpdated": "City updated successfully",
   "cityUpdateFailed": "Failed to update city",
-  "history": "History"
+  "history": "History",
+  "appName": "Digital Rider",
+  "somethingWentWrong": "Something went wrong.",
+  "unknown": "Unknown",
+  "notAvailable": "Not available",
+  "invalidDate": "Invalid date",
+  "deliveryTimeNotSet": "Delivery time not set",
+  "invalidDeliveryTime": "Invalid delivery time",
+  "nothingHereYet": "Nothing here yet",
+  "loading": "Loading...",
+  "exitApp": "Exit App",
+  "exitPrompt": "Are you sure you want to exit?",
+  "exit": "Exit",
+  "notificationPermissionTitle": "Notification Permission Needed",
+  "notificationPermissionMessage": "We use notifications to alert you about new orders. Please enable permission.",
+  "riderOrders": "Ride Orders",
+  "parcelOrders": "Parcel Orders",
+  "digistallOrders": "Digistall Orders",
+  "statusEnRoute": "En Route",
+  "statusInTransit": "In Transit",
+  "statusDelivered": "Delivered",
+  "statusCancelled": "Cancelled",
+  "statusLabel": "STATUS",
+  "pickup": "PICKUP",
+  "drop": "DROP",
+  "pickupNA": "Pickup N/A",
+  "dropNA": "Drop N/A",
+  "cartValue": "CART VALUE",
+  "tripDistance": "TRIP DISTANCE",
+  "distanceNA": "Distance N/A",
+  "total": "TOTAL",
+  "commissionAmount": "Commission: ₹{amount}",
+  "@commissionAmount": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "totalAmountValue": "Total: ₹{amount}",
+  "@totalAmountValue": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "viewMap": "VIEW MAP",
+  "accept": "ACCEPT",
+  "couldNotOpenMaps": "Could not open Maps.",
+  "deliveryBy": "Delivery By - {time}",
+  "@deliveryBy": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "finishCurrentRidesFirst": "You need to finish your current rides first",
+  "orderAccepted": "Order Accepted Successfully",
+  "acceptFailed": "Failed to accept order. Please try again.",
+  "incomingBookings": "Incoming Bookings",
+  "vehicleTypeLabel": "Vehicle Type: {vehicle}",
+  "@vehicleTypeLabel": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      }
+    }
+  },
+  "ordersCount": "{count} orders",
+  "@ordersCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "newOrdersHint": "New requests in your city will appear here automatically.",
+  "orderNumber": "Order #{id}",
+  "@orderNumber": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "productLabel": "Product - {name}",
+  "@productLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "quantityLabel": "Quantity - {quantity}",
+  "@quantityLabel": {
+    "placeholders": {
+      "quantity": {
+        "type": "String"
+      }
+    }
+  },
+  "name": "Name",
+  "contact": "Contact",
+  "progress": "PROGRESS",
+  "viewDetails": "VIEW DETAILS",
+  "home": "My Orders",
+  "gettingLocation": "Getting current location...",
+  "locationDenied": "Location permission denied",
+  "locationDeniedForever": "Location permission permanently denied",
+  "unableToGetLocation": "Unable to get location",
+  "currentLocationFound": "Current location found",
+  "locationCoordinates": "Location coordinates: {lat}, {lng}",
+  "@locationCoordinates": {
+    "placeholders": {
+      "lat": {
+        "type": "String"
+      },
+      "lng": {
+        "type": "String"
+      }
+    }
+  },
+  "actionFailed": "Action failed. Please try again.",
+  "tripStarted": "Trip Started Successfully.",
+  "tripCompletedSuccess": "Trip Completed Successfully.",
+  "enterCustomerOtp": "Enter Customer OTP here",
+  "enterDeliveryOtp": "Enter Delivery OTP from customer",
+  "pleaseEnterCustomerOtp": "Please enter the customer OTP.",
+  "pleaseEnterDeliveryOtp": "Please enter the Delivery OTP.",
+  "startTrip": "Start the Trip",
+  "completeTrip": "Complete the Trip",
+  "tripCompleted": "Trip Completed",
+  "tripDetails": "Trip Details",
+  "tripInProgress": "Trip In Progress",
+  "customerPhoneMissing": "Customer phone number is missing.",
+  "couldNotLaunchDialer": "Could not launch phone dialer.",
+  "callCustomer": "Call Customer",
+  "navigateToPickup": "Navigate to Pickup",
+  "navigateToDestination": "Navigate to Destination",
+  "pickupAddressMissing": "Pickup address is missing.",
+  "destinationAddressMissing": "Destination address is missing.",
+  "orderId": "Order ID",
+  "phoneNo": "Phone No.",
+  "distance": "Distance",
+  "vehicleType": "Vehicle Type",
+  "numberOfPassengers": "Number of Passengers",
+  "parcelMessage": "Parcel Message",
+  "parcelWeight": "Parcel Weight",
+  "nil": "Nil",
+  "totalValue": "Total Value",
+  "deliverBy": "Deliver By",
+  "pickupTime": "Pickup Time",
+  "yourLocation": "YOUR LOCATION",
+  "tripCompletedTitle": "Trip Completed!",
+  "pickupLocation": "Pickup Location",
+  "destination": "Destination",
+  "totalAmount": "Total Amount",
+  "cartValueLabel": "Cart Value",
+  "scanToPay": "Scan to Pay",
+  "invoiceDownloaded": "Invoice downloaded: {path}",
+  "@invoiceDownloaded": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "invoiceDownloadFailed": "Failed to download invoice: {error}",
+  "@invoiceDownloadFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadInvoice": "Download Invoice",
+  "done": "Done",
+  "selectVehicle": "Select Vehicle",
+  "vehicleUpdated": "Vehicle updated to {vehicle}",
+  "@vehicleUpdated": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      }
+    }
+  },
+  "notificationsOn": "Notifications turned on",
+  "notificationsOff": "Notifications turned off",
+  "notificationsBlocked": "Notifications are blocked. Please allow them in your phone settings.",
+  "testNotification": "Send Test Notification",
+  "testNotificationSent": "Test notification sent!",
+  "privacyPolicy": "Privacy Policy",
+  "earnings": "Earnings",
+  "totalEarnings": "Total Earnings",
+  "earningsBreakdown": "Earnings Breakdown",
+  "completedDeliveries": "{count} completed deliveries",
+  "@completedDeliveries": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "completedRidesCount": "{count} completed rides",
+  "@completedRidesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deliveredParcelsCount": "{count} delivered parcels",
+  "@deliveredParcelsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deliveredOrdersCount": "{count} delivered orders",
+  "@deliveredOrdersCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "couldNotLoadEarnings": "Could not load earnings. Pull down to try again.",
+  "signUp": "Sign Up",
+  "login": "Login",
+  "signIn": "Sign in",
+  "welcomeToDigitalRider": "Welcome to Digital Rider",
+  "whereDoWeGetOrders": "Where Do We Get Orders",
+  "onboardingProcess": "Onboarding Process",
+  "benefitsTitle": "Benefits of Being a Digital Rider",
+  "aboutUs": "About Us",
+  "aboutUsText": "We empower businesses by connecting them with reliable riders for seamless order fulfillment and delivery.",
+  "earnPerDay": "Earn 1000 per day",
+  "earnPerDayDesc": "Daily earning potential with reliable orders.",
+  "driveAnyVehicle": "Drive Any Vehicle",
+  "driveAnyVehicleDesc": "Auto, Bike, Car, or Taxi — earn with what you have.",
+  "threeStepOnboarding": "3-Step Onboarding",
+  "threeStepOnboardingDesc": "Start earning quickly with our fast onboarding.",
+  "basicInfo": "Basic Info",
+  "basicInfoDesc": "Provide your basic information including name, contact details, and address.",
+  "documents": "Documents",
+  "documentsDesc": "Upload Aadhar, Driving License, Payment QR and Profile Image.",
+  "verification": "Verification",
+  "verificationDesc": "We’ll notify you once your documents are verified. Physical card is given.",
+  "flexibleSchedule": "Flexible Schedule",
+  "flexibleScheduleDesc": "Freedom to choose your working hours.",
+  "competitiveEarnings": "Competitive Earnings",
+  "competitiveEarningsDesc": "Earn more with bonuses and incentives.",
+  "regularOrders": "Regular Orders",
+  "regularOrdersDesc": "Consistent income from steady orders.",
+  "supportiveCommunity": "Supportive Community",
+  "supportiveCommunityDesc": "Rider support system always ready.",
+  "training": "Training and Development",
+  "trainingDesc": "Improve your skills and stay updated.",
+  "healthSafety": "Health and Safety",
+  "healthSafetyDesc": "We prioritize your health and safety.",
+  "newsletter": "Newsletter",
+  "ordersFromGotanStore": "Orders from Gotan Store app",
+  "pickDropPerson": "Pick and Drop Person",
+  "pickDropParcel": "Pick and Drop Parcel",
+  "ordersFromDigistall": "Orders from Digistall",
+  "deliverDigistallOrders": "Deliver Digistall Store Order and Earn commission",
+  "alreadyHaveAccountSignIn": "You already have an account. Please sign in.",
+  "loginSuccessWelcome": "Login successful! Welcome back.",
+  "uploadDocumentsToContinue": "Please upload your documents to continue.",
+  "noAccountSignUp": "You don't have an account. Please sign up.",
+  "googleSignInFailed": "Google sign-in failed.",
+  "loginToAccount": "Log in to your account",
+  "createNewAccount": "Create a new account",
+  "continueWithGoogle": "Continue with Google",
+  "createNewAccountQuestion": "Create a new account?",
+  "alreadyHaveAccountQuestion": "Already have an account?",
+  "agreeTerms": "By logging in you agree to our Terms and Conditions",
+  "enterSubdomainError": "Please enter a subdomain",
+  "domainTaken": "This domain is already taken.",
+  "createDigitalIdentity": "Create your digital identity",
+  "continueNextStep": "Continue to next step",
+  "domainInfo": "This domain will become part of your digital identity and help identify you uniquely.",
+  "enterSubdomain": "Enter subdomain",
+  "fillAllDetails": "Please fill in all the details properly.",
+  "selectCityAndVehicle": "Please select your city and vehicle type",
+  "accountCreated": "Account created successfully",
+  "submitFailed": "Failed to submit. Try again.",
+  "enterYourDetails": "Enter your details",
+  "phoneNumber": "Phone number",
+  "infoSafe": "Your information is safe and will be used only to provide service.",
+  "uploadRequiredDocuments": "Please upload your licence and payment QR code.",
+  "loginSuccessful": "Login successful!",
+  "uploadFailed": "Failed to upload documents",
+  "errorTryAgain": "An error occurred. Please try again.",
+  "uploadedFile": "Uploaded: {name}",
+  "@uploadedFile": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "uploadYourDocuments": "Upload your documents",
+  "uploadLicense": "Upload licence",
+  "uploadQrCode": "Upload payment QR code",
+  "uploadAadhaar": "Upload Aadhaar (optional)",
+  "uploadProfilePhoto": "Upload profile photo (optional)",
+  "upload": "Upload",
+  "documentsHint": "All documents must be clear and readable. Upload only JPG, PNG, or PDF files.",
+  "or": "or",
+  "orderAlreadyTaken": "This order was already accepted by another rider."
 }

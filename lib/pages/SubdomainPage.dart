@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:digirider/global/Common.dart';
 
+import '../global/l10n.dart';
 import '../utils/bottomSnackBar.dart';
 
 class SubdomainPage extends StatefulWidget {
@@ -58,10 +59,11 @@ class _SubdomainPageState extends State<SubdomainPage> {
 
 
   void _onNextStep() async {
-    final subdomain = _controller.text.trim();
+    // Subdomains are stored lowercase without spaces, e.g. "ramesh" for ramesh.digistall.in
+    final subdomain = _controller.text.trim().toLowerCase().replaceAll(' ', '');
 
     if (subdomain.isEmpty) {
-      getSnackBar(context, "Please enter a subdomain", Colors.orange, 2);
+      getSnackBar(context, context.l10n.enterSubdomainError, Colors.orange, 2);
       return;
     }
 
@@ -80,7 +82,7 @@ class _SubdomainPageState extends State<SubdomainPage> {
         ),
       );
     } else {
-      getSnackBar(context, "This domain is already taken", Colors.redAccent, 1);
+      getSnackBar(context, context.l10n.domainTaken, Colors.redAccent, 1);
     }
 
     setState(() => _isLoading = false);
@@ -122,7 +124,7 @@ class _SubdomainPageState extends State<SubdomainPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text("Create your digital identity",
+                          Text(context.l10n.createDigitalIdentity,
                               style: TextStyle(
                                 fontFamily: 'bold',
                                 fontSize: 20,
@@ -138,7 +140,7 @@ class _SubdomainPageState extends State<SubdomainPage> {
                                 Padding(
                                   padding: const EdgeInsets.only(top: 6.0, left: 4.0),
                                   child: Text(
-                                    "This domain is already taken.",
+                                    context.l10n.domainTaken,
                                     style: TextStyle(
                                       color: Colors.redAccent.shade200,
                                       fontSize: Common.h4,
@@ -163,7 +165,7 @@ class _SubdomainPageState extends State<SubdomainPage> {
                               ),
                               child: Center(
                                 child: Text(
-                                  "Continue to next step",
+                                  context.l10n.continueNextStep,
                                   style: TextStyle(
                                     fontFamily: 'bold',
                                     fontSize: Common.h2,
@@ -183,7 +185,7 @@ class _SubdomainPageState extends State<SubdomainPage> {
                               borderRadius: BorderRadius.circular(5),
                             ),
                             child: Text(
-                              "This domain will become part of your digital store and help identify your shop uniquely.",
+                              context.l10n.domainInfo,
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontFamily: 'bold',
@@ -245,7 +247,7 @@ class _SubdomainPageState extends State<SubdomainPage> {
               controller: _controller,
               onChanged: _checkSubdomain,
               decoration: InputDecoration(
-                hintText: "Enter subdomain",
+                hintText: context.l10n.enterSubdomain,
                 border: InputBorder.none,
                 isDense: true,
               ),

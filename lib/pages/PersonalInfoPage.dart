@@ -8,6 +8,8 @@ import 'package:digirider/global/Common.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../global/l10n.dart';
+import '../services/notification_service.dart';
 import '../utils/bottomSnackBar.dart';
 
 class PersonalInfoPage extends StatefulWidget {
@@ -41,7 +43,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
         _selectedCity == null ||
         _selectedVehicle == null ||
         widget.riderDomain.isEmpty) {
-      getSnackBar(context, "Please fill in all the details properly.", Colors.orange, 2);
+      getSnackBar(context, context.l10n.fillAllDetails, Colors.orange, 2);
       // ScaffoldMessenger.of(context).showSnackBar(
       //   SnackBar(content: Text('Please fill in all the details properly.')),
       // );
@@ -53,7 +55,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
 
   Future<void> _submitDetails() async {
     if (_selectedCity == null || _selectedVehicle == null) {
-      getSnackBar(context, "Please select your city and vehicle type", Colors.orange, 2);
+      getSnackBar(context, context.l10n.selectCityAndVehicle, Colors.orange, 2);
       return;
     }
 
@@ -100,7 +102,10 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
         if (rider['currentLocation'] != null && rider['currentLocation']['timestamp'] != null) {
           await prefs.setString('locationTimestamp', rider['currentLocation']['timestamp']);
         }
-        getSnackBar(context, "Account created Successfully", Colors.green, 0);
+        // The rider record exists now, so this phone's FCM token can be stored on it.
+        await NotificationService().syncToken();
+        if (!mounted) return;
+        getSnackBar(context, context.l10n.accountCreated, Colors.green, 0);
 
         Navigator.pushReplacement(
           context,
@@ -108,15 +113,17 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
         );
       } else {
         final data = jsonDecode(response.body);
-        getSnackBar(context, data['message'] ?? 'Something went wrong', Colors.orange, 2);
+        getSnackBar(context, data['message'] ?? context.l10n.somethingWentWrong, Colors.orange, 2);
       }
 
     } catch (e) {
-      getSnackBar(context, "Failed to submit. Try again.", Colors.redAccent, 2);
+      if (mounted) getSnackBar(context, context.l10n.submitFailed, Colors.redAccent, 2);
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -160,7 +167,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            "Enter your details",
+                            context.l10n.enterYourDetails,
                             style: TextStyle(
                               fontFamily: 'bold',
                               fontSize: 20,
@@ -169,22 +176,22 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
                             ),
                           ),
                           SizedBox(height: 20),
-                          _buildTextField(_nameController, "Name"),
+                          _buildTextField(_nameController, context.l10n.name),
                           SizedBox(height: 15),
                           _buildTextField(
                             _phoneController,
-                            "Phone number",
+                            context.l10n.phoneNumber,
                             keyboardType: TextInputType.phone,
                             inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
                           ),
                           SizedBox(height: 15),
                           Row(
                             children: [
-                              Expanded(child: _buildDropdown("Select city", cities, _selectedCity, (value) {
+                              Expanded(child: _buildDropdown(context.l10n.selectCity, cities, context.l10n.cityName, _selectedCity, (value) {
                                 setState(() => _selectedCity = value);
                               })),
                               SizedBox(width: 10),
-                              Expanded(child: _buildDropdown("Select vehicle", vehicles, _selectedVehicle, (value) {
+                              Expanded(child: _buildDropdown(context.l10n.selectVehicle, vehicles, context.l10n.vehicleName, _selectedVehicle, (value) {
                                 setState(() => _selectedVehicle = value);
                               })),
                             ],
@@ -201,7 +208,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
                               ),
                               child: Center(
                                 child: Text(
-                                  "Continue to next step",
+                                  context.l10n.continueNextStep,
                                   style: TextStyle(
                                     fontFamily: 'bold',
                                     fontSize: Common.h2,
@@ -220,7 +227,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
                               borderRadius: BorderRadius.circular(5),
                             ),
                             child: Text(
-                              "Your information is safe and will be used only to provide service.",
+                              context.l10n.infoSafe,
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontFamily: 'bold',
@@ -293,7 +300,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
   }
 
 
-  Widget _buildDropdown(String hint, List<String> items, String? value, ValueChanged<String?> onChanged) {
+  Widget _buildDropdown(String hint, List<String> items, String Function(String) labelOf, String? value, ValueChanged<String?> onChanged) {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: Common.secondary, width: 1.5),
@@ -327,7 +334,7 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
             return DropdownMenuItem<String>(
               value: item,
               child: Text(
-                item,
+                labelOf(item),
                 style: TextStyle(
                   fontFamily: 'bold',
                   fontSize: Common.h3,

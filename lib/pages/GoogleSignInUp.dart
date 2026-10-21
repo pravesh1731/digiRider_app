@@ -12,6 +12,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../NavMain.dart';
+import '../global/l10n.dart';
+import '../services/notification_service.dart';
 import '../utils/bottomSnackBar.dart';
 import 'SubdomainPage.dart';
 
@@ -65,11 +67,13 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
 
 
       final bool apiSuccess = await _callYourApi(user.email);
+      if (!mounted) return;
+      final l10n = context.l10n;
 
       if (apiSuccess) {
 
         if(!_isLogin){
-          getSnackBar(context, "You already have an account kindly sign In.", Colors.orange, 2);
+          getSnackBar(context, l10n.alreadyHaveAccountSignIn, Colors.orange, 2);
           return;
         }
 
@@ -77,8 +81,10 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
         final userStatus = prefs.getString('userStatus') ?? '';
 
         if (userStatus == 'Adv') {
-          getSnackBar(context, "Login successful! Welcome back.", Colors.green, 0);
+          getSnackBar(context, l10n.loginSuccessWelcome, Colors.green, 0);
           await prefs.setBool('isLoggedIn', true);
+          // Store this phone's FCM token on the rider so new-order pushes reach it.
+          await NotificationService().syncToken();
           Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => NavMain()),
@@ -86,14 +92,14 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
           );
           // Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => NavMain()));
         } else {
-          getSnackBar(context, "Please upload your documents to continue.", Colors.orange, 1);
+          getSnackBar(context, l10n.uploadDocumentsToContinue, Colors.orange, 1);
           Navigator.push(context, MaterialPageRoute(builder: (_) => DocumentUploadPage()));
         }
 
         // Navigator.pushReplacementNamed(context, '/successPage');
       } else {
         if(_isLogin){
-          getSnackBar(context, "You don\'t have account kindly sign up", Colors.orange, 2);
+          getSnackBar(context, l10n.noAccountSignUp, Colors.orange, 2);
           return;
         }
         final prefs = await SharedPreferences.getInstance();
@@ -104,7 +110,11 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
       }
     } catch (e) {
       print('Google Sign-In Error: $e');
-      getSnackBar(context, "Google sign-in failed'.", Colors.orange, 2);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+      getSnackBar(context, context.l10n.googleSignInFailed, Colors.orange, 2);
     }
   }
 
@@ -148,6 +158,8 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
           await prefs.setString('vehicleType', data['vehicleType'] ?? '');
           await prefs.setString('licence', data['licence'] ?? '');
           await prefs.setString('qrcode', data['qrcode'] ?? '');
+          await prefs.setString('profile', data['profile'] ?? '');
+          await prefs.setString('aadhaar', data['aadhaar'] ?? '');
 
           return true;
         } else {
@@ -228,7 +240,7 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
                         padding: EdgeInsets.all(20),
                         child: Column(
                           children: [
-                            Text(_isLogin ? 'Log in to your account' : 'Create a new account', style: TextStyle(fontFamily: 'bold', fontSize: 20, fontWeight: Common.weight),),
+                            Text(_isLogin ? context.l10n.loginToAccount : context.l10n.createNewAccount, style: TextStyle(fontFamily: 'bold', fontSize: 20, fontWeight: Common.weight),),
                             SizedBox(height: 20,),
                             InkWell(
                               onTap: _handleGoogleSignIn,
@@ -265,7 +277,7 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
                                 ),
                                 SizedBox(width: 10),
                                 Text(
-                                  'Continue with Google',
+                                  context.l10n.continueWithGoogle,
                                   style: TextStyle(
                                     fontFamily: 'bold',
                                     fontSize: Common.h2,
@@ -287,7 +299,7 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
                                   ),
                                 ),
                                 SizedBox(width: 10,),
-                                Text('or', style: TextStyle(fontFamily: 'bold', fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary),),
+                                Text(context.l10n.or, style: TextStyle(fontFamily: 'bold', fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary),),
                                 SizedBox(width: 10,),
                                 Expanded(
                                   child: Container(
@@ -309,7 +321,7 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
                                 text: TextSpan(
                                   children: [
                                     TextSpan(
-                                      text: _isLogin ? 'Create a new account?' : 'Already have an account?', // 🔁 Toggle text
+                                      text: _isLogin ? context.l10n.createNewAccountQuestion : context.l10n.alreadyHaveAccountQuestion, // 🔁 Toggle text
                                       style: TextStyle(
                                         fontFamily: 'bold',
                                         fontSize: Common.h2,
@@ -318,7 +330,7 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
                                       ),
                                     ),
                                     TextSpan(
-                                      text: _isLogin ? ' Sign up' : ' Sign in', // 🔁 Toggle action
+                                      text: ' ${_isLogin ? context.l10n.signUp : context.l10n.signIn}', // 🔁 Toggle action
                                       style: TextStyle(
                                         fontFamily: 'bold',
                                         fontSize: Common.h2,
@@ -333,7 +345,7 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
                             SizedBox(height: 15,),
                             InkWell(
                               onTap: (){
-                                _launchUrl("https://rider.digistall.in/terms");
+                                _launchUrl("https://rider.digistall.in/#/privacy-policy");
                               },
                               child: Card(
                                 // elevation: 4,
@@ -347,7 +359,7 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
                                     // color: Common.background,
                                     borderRadius: BorderRadius.circular(5),
                                   ),
-                                  child: Text('By logging in you agree to our terms and Conditions', textAlign: TextAlign.center, style: TextStyle(color: Common.light, fontWeight: Common.weight, fontSize: Common.h4, fontFamily: 'bold'), softWrap: true,),
+                                  child: Text(context.l10n.agreeTerms, textAlign: TextAlign.center, style: TextStyle(color: Common.light, fontWeight: Common.weight, fontSize: Common.h4, fontFamily: 'bold'), softWrap: true,),
                                 ),
                               ),
                             )

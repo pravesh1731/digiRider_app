@@ -19,6 +19,7 @@ import 'dart:typed_data';
 import 'package:intl/intl.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:pdf/pdf.dart';
+import '../global/l10n.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 class HistoryPage extends StatefulWidget {
@@ -66,19 +67,19 @@ class _HistoryPageState extends State<HistoryPage> {
     final orderTypes = [
       {
         'type': 'Rider Orders',
-        'endpoint': 'api/rider/riderhistory?cityName=$cityName&phoneNumber=$phoneNumber',
+        'endpoint': 'api/rider/riderhistory?phoneNumber=${Uri.encodeQueryComponent(phoneNumber)}',
         'responseKey': 'orderHistory',
         'serviceType': 'Rider Booking'
       },
       {
         'type': 'Parcel Orders',
-        'endpoint': 'api/parcel/parcelhistory?cityName=$cityName&phoneNumber=$phoneNumber',
+        'endpoint': 'api/parcel/parcelhistory?phoneNumber=${Uri.encodeQueryComponent(phoneNumber)}',
         'responseKey': 'parcelHistory',
         'serviceType': 'Parcel Booking'
       },
       {
         'type': 'Digistall Orders',
-        'endpoint': 'api/digiorder/digiorderhistory?cityName=$cityName&phoneNumber=$phoneNumber',
+        'endpoint': 'api/digiorder/digiorderhistory?phoneNumber=${Uri.encodeQueryComponent(phoneNumber)}',
         'responseKey': 'orderItemHistory',
         'serviceType': 'Digistall Booking'
       },
@@ -242,7 +243,7 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
               ),
             ],
-            title: Text('History', style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color: Common.primary),),
+            title: Text(context.l10n.history, style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color: Common.primary),),
           ),
           body: Container(
             child: Padding(
@@ -322,7 +323,7 @@ class _HistoryPageState extends State<HistoryPage> {
                             Positioned(
                               bottom: 30,
                               child: Text(
-                                'Nothing here yet',
+                                context.l10n.nothingHereYet,
                                 style: TextStyle(
                                     fontSize: Common.h2,
                                     color: Colors.grey,
@@ -381,16 +382,16 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
 
   String formatIndianDate(String input) {
     try {
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       final localTime = parsed.toLocal();
       final formatter = DateFormat('dd MMM yyyy, hh:mm a');
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
@@ -399,14 +400,14 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
     final deliveryTime = order['deliveryTime'];
 
     if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
-      return 'Delivery time not set';
+      return context.l10n.deliveryTimeNotSet;
     }
 
     try {
       final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
       return DateFormat('dd MMM yyyy, hh:mm a').format(parsed);
     } catch (e) {
-      return 'Invalid delivery time';
+      return context.l10n.invalidDeliveryTime;
     }
   }
 
@@ -417,6 +418,23 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
     } else {
       return formatIndianDate(widget.order['pickupTime']?.toString() ?? '');
     }
+  }
+
+  Widget _buildStatusChip(String status) {
+    final delivered = status.toLowerCase() == 'delivered';
+    final cancelled = status.toLowerCase() == 'cancelled';
+    final color = delivered ? Colors.green : (cancelled ? Colors.red : Colors.orange);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        context.l10n.riderStatusName(status),
+        style: TextStyle(fontSize: 11, color: color, fontFamily: 'bold', fontWeight: Common.weight),
+      ),
+    );
   }
 
   Future<void> _handleDownloadAndPrint(Map<String, dynamic> order) async {
@@ -594,7 +612,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    orderType,
+                    context.l10n.orderTypeName(orderType),
                     style: TextStyle(
                       fontSize: Common.h2,
                       fontWeight: Common.weight2,
@@ -604,7 +622,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                   ),
                 ),
                 Text(
-                  'Order #${widget.order['_id']?.toString().substring(0, 8) ?? ''}',
+                  context.l10n.orderNumber(widget.order['_id']?.toString().substring(0, 8) ?? ''),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: Common.weight2,
@@ -632,6 +650,8 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                     maxLines: 1,
                   ),
                 ),
+                if ((widget.order['riderStatus']?.toString() ?? '').isNotEmpty)
+                  _buildStatusChip(widget.order['riderStatus'].toString()),
               ],
             ),
             Divider(color: Common.light, thickness: 0.09),
@@ -645,7 +665,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                   Expanded(
                     flex: 2,
                     child: Text(
-                      'Product - ${widget.order['productName'] ?? 'Unknown'}',
+                      context.l10n.productLabel(widget.order['productName']?.toString() ?? context.l10n.unknown),
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -659,7 +679,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                   Expanded(
                     flex: 1,
                     child: Text(
-                      'Qty - ${widget.order['productCount']?.toString() ?? 'Unknown'}',
+                      context.l10n.quantityLabel(widget.order['productCount']?.toString() ?? context.l10n.unknown),
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -683,7 +703,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Name',
+                          context.l10n.name,
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -693,7 +713,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          '${widget.order['sellerName'] ?? 'Unknown'}',
+                          '${widget.order['sellerName'] ?? context.l10n.unknown}',
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -712,7 +732,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Contact',
+                          context.l10n.contact,
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -722,7 +742,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          '${widget.order['sellerPhone']?.toString() ?? 'Unknown'}',
+                          '${widget.order['sellerPhone']?.toString() ?? context.l10n.unknown}',
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -746,7 +766,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71)),
                 SizedBox(width: 16),
-                Text('PICKUP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold')),
+                Text(context.l10n.pickup, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold')),
               ],
             ),
             SizedBox(height: 2),
@@ -769,8 +789,8 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
                         orderType == 'Digistall Orders'
-                          ? (widget.order['sellerAddress'] ?? 'Pickup N/A').toString()
-                          : (widget.order['pickupAddress'] ?? 'Pickup N/A').toString(),
+                          ? (widget.order['sellerAddress'] ?? context.l10n.pickupNA).toString()
+                          : (widget.order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
                         style: TextStyle(fontSize: 12, fontWeight: Common.weight, color: Common.light),
                         softWrap: true,
                       ),
@@ -787,7 +807,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFFED9D60)),
                 SizedBox(width: 16),
-                Text('DROP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold')),
+                Text(context.l10n.drop, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold')),
               ],
             ),
             SizedBox(height: 2),
@@ -797,8 +817,8 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                 padding: const EdgeInsets.only(left: 40.0, right: 8),
                 child: Text(
                   orderType == 'Digistall Orders'
-                    ? widget.order['address'] ?? 'Drop N/A'
-                    : widget.order['deliveryAddress'] ?? 'Drop N/A',
+                    ? widget.order['address'] ?? context.l10n.dropNA
+                    : widget.order['deliveryAddress'] ?? context.l10n.dropNA,
                   style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),
                   softWrap: true,
                 ),
@@ -842,7 +862,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'TOTAL',
+                                  context.l10n.total,
                                   style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),
                                 ),
                                 SizedBox(height: 3),
@@ -852,7 +872,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                                 ),
                                 SizedBox(height: 2),
                                 Text(
-                                  'Total ₹${total.toStringAsFixed(0)}',
+                                  context.l10n.totalAmountValue(total.toStringAsFixed(0)),
                                   style: TextStyle(fontSize: Common.h3,  color: Colors.blue),
                                 ),
                               ],
@@ -862,7 +882,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'TOTAL',
+                                  context.l10n.total,
                                   style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),
                                 ),
                                 SizedBox(height: 3),
@@ -890,7 +910,7 @@ class _UnifiedOrderCardState extends State<_UnifiedOrderCard> {
                         )
                       : const Icon(Icons.document_scanner),
                   label: Text(
-                    _isGenerating ? "Preparing..." : "Download Invoice",
+                    _isGenerating ? context.l10n.preparing : context.l10n.downloadInvoice,
                     style: TextStyle(
                       color: Common.primary,
                       fontSize: Common.h3,
@@ -934,9 +954,9 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
   String formatIndianDate(String input) {
     try {
       // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       // Convert to local time if needed (optional)
       final localTime = parsed.toLocal();
@@ -948,7 +968,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
@@ -957,14 +977,14 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
     final deliveryTime = order['deliveryTime'];
 
     if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
-      return 'Delivery time not set';
+      return context.l10n.deliveryTimeNotSet;
     }
 
     try {
       final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
       return DateFormat('dd MMM yyyy, hh:mm a').format(parsed); // Ex: 04 Jul 2025, 12:00 PM
     } catch (e) {
-      return 'Invalid delivery time';
+      return context.l10n.invalidDeliveryTime;
     }
   }
 
@@ -1169,7 +1189,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                 Align(
                   alignment: Alignment.topRight,
                   child: Text(
-                    'Order #${widget.order['_id']?.toString().substring(0, 8) ?? ''}',
+                    context.l10n.orderNumber(widget.order['_id']?.toString().substring(0, 8) ?? ''),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: Common.weight2,
@@ -1210,7 +1230,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                   child: Align(
                     alignment: Alignment.topLeft,
                     child: Text(
-                      'Product - ${widget.order['productName'] ?? 'Unknown'}',
+                      context.l10n.productLabel(widget.order['productName']?.toString() ?? context.l10n.unknown),
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -1228,7 +1248,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                   child: Align(
                     alignment: Alignment.topRight,
                     child: Text(
-                      'Quantity - ${widget.order['productCount']?.toString() ?? 'Unknown'}',
+                      context.l10n.quantityLabel(widget.order['productCount']?.toString() ?? context.l10n.unknown),
                       style: TextStyle(
                         fontSize: Common.h2,
                         fontWeight: Common.weight2,
@@ -1247,7 +1267,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71),),
                 SizedBox(width: 16,),
-                Text('PICKUP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.pickup, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -1269,8 +1289,8 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
-                        // (order['pickupAddress'] ?? 'Pickup N/A').toString(),
-                        (widget.order['sellerAddress'] ?? 'Pickup N/A').toString(),
+                        // (order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
+                        (widget.order['sellerAddress'] ?? context.l10n.pickupNA).toString(),
                         style: TextStyle(fontSize: 12, fontWeight: Common.weight, color: Common.light),
                         softWrap: true,
                       ),
@@ -1285,7 +1305,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFFED9D60),),
                 SizedBox(width: 16,),
-                Text('DROP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.drop, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -1294,8 +1314,8 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
               child: Padding(
                 padding: const EdgeInsets.only(left: 40.0, right: 8),
                 child: Text(
-                  // order['deliveryAddress'] ?? 'Drop N/A',
-                  widget.order['address'] ?? 'Drop N/A',
+                  // order['deliveryAddress'] ?? context.l10n.dropNA,
+                  widget.order['address'] ?? context.l10n.dropNA,
                   style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),
                   softWrap: true,
                 ),
@@ -1309,7 +1329,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('CART VALUE', style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
+                      Text(context.l10n.cartValue, style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
                       SizedBox(height: 3,),
                       Text('₹${widget.order['totalCartValue'] ?? '0'}', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Colors.green,),)
                     ],
@@ -1327,7 +1347,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                   )
                       : const Icon(Icons.document_scanner),
                   label: Text(
-                    _isGenerating ? "Preparing..." : "Download Invoice",
+                    _isGenerating ? context.l10n.preparing : context.l10n.downloadInvoice,
                     style: TextStyle(
                       color: Common.primary,
                       fontSize: Common.h3,
@@ -1349,7 +1369,7 @@ class _DigistallOrderCardState extends State<_DigistallOrderCard> {
                 //   child: Column(
                 //     crossAxisAlignment: CrossAxisAlignment.start,
                 //     children: [
-                //       Text('TRIP DISTANCE', style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),),
+                //       Text(context.l10n.tripDistance, style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),),
                 //       SizedBox(height: 3,),
                 //       Text(order['distance'] ?? 'Distance N/A', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Common.light),)
                 //     ],
@@ -1385,9 +1405,9 @@ class _OrderCardState extends State<_OrderCard> {
   String formatIndianDate(String input) {
     try {
       // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return 'Invalid Date';
+      if (input == null || input.isEmpty) return context.l10n.invalidDate;
       final parsed = DateTime.tryParse(input);
-      if (parsed == null) return 'Invalid Date';
+      if (parsed == null) return context.l10n.invalidDate;
 
       // Convert to local time if needed (optional)
       final localTime = parsed.toLocal();
@@ -1399,7 +1419,7 @@ class _OrderCardState extends State<_OrderCard> {
       return formatter.format(localTime);
     } catch (e) {
       debugPrint('Date formatting error: $e');
-      return 'Invalid Date';
+      return context.l10n.invalidDate;
     }
   }
 
@@ -1588,7 +1608,7 @@ class _OrderCardState extends State<_OrderCard> {
                 Align(
                   alignment: Alignment.topRight,
                   child: Text(
-                    'Order #${widget.order['_id']?.toString().substring(0, 8) ?? ''}',
+                    context.l10n.orderNumber(widget.order['_id']?.toString().substring(0, 8) ?? ''),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: Common.weight2,
@@ -1630,7 +1650,7 @@ class _OrderCardState extends State<_OrderCard> {
                       Align(
                         alignment: Alignment.topLeft,
                         child: Text(
-                          'Name',
+                          context.l10n.name,
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -1646,7 +1666,7 @@ class _OrderCardState extends State<_OrderCard> {
                       Align(
                         alignment: Alignment.topLeft,
                         child: Text(
-                          '${widget.order['sellerName'] ?? 'Unknown'}',
+                          '${widget.order['sellerName'] ?? context.l10n.unknown}',
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -1668,7 +1688,7 @@ class _OrderCardState extends State<_OrderCard> {
                       Align(
                         alignment: Alignment.topLeft,
                         child: Text(
-                          'Contact',
+                          context.l10n.contact,
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -1683,7 +1703,7 @@ class _OrderCardState extends State<_OrderCard> {
                       Align(
                         alignment: Alignment.topLeft,
                         child: Text(
-                          '${widget.order['sellerPhone']?.toString() ?? 'Unknown'}',
+                          '${widget.order['sellerPhone']?.toString() ?? context.l10n.unknown}',
                           style: TextStyle(
                             fontSize: Common.h2,
                             fontWeight: Common.weight2,
@@ -1704,7 +1724,7 @@ class _OrderCardState extends State<_OrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFF58DE71),),
                 SizedBox(width: 16,),
-                Text('PICKUP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.pickup, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -1726,7 +1746,7 @@ class _OrderCardState extends State<_OrderCard> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: Text(
-                        (widget.order['pickupAddress'] ?? 'Pickup N/A').toString(),
+                        (widget.order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
                         style: TextStyle(fontSize: 12, fontWeight: Common.weight, color: Common.light),
                         softWrap: true,
                       ),
@@ -1741,7 +1761,7 @@ class _OrderCardState extends State<_OrderCard> {
               children: [
                 SvgPicture.asset('assets/Icons/location.svg', width: 24, height: 24, color: Color(0xFFED9D60),),
                 SizedBox(width: 16,),
-                Text('DROP', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
+                Text(context.l10n.drop, style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight2, fontFamily: 'bold',),),
               ],
             ),
             SizedBox(height: 2,),
@@ -1750,7 +1770,7 @@ class _OrderCardState extends State<_OrderCard> {
               child: Padding(
                 padding: const EdgeInsets.only(left: 40.0, right: 8),
                 child: Text(
-                  widget.order['deliveryAddress'] ?? 'Drop N/A',
+                  widget.order['deliveryAddress'] ?? context.l10n.dropNA,
                   style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight, color: Common.light),
                   softWrap: true,
                 ),
@@ -1764,7 +1784,7 @@ class _OrderCardState extends State<_OrderCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('TOTAL', style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
+                      Text(context.l10n.total, style: TextStyle(fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary, fontFamily: 'bold'),),
                       SizedBox(height: 3,),
                       Text('₹ ${widget.order['expectedPrice'] ?? '0'}', style: TextStyle(fontSize: Common.h2, fontWeight: Common.weight, color: Colors.green,),)
                     ],
@@ -1782,7 +1802,7 @@ class _OrderCardState extends State<_OrderCard> {
                   )
                       : const Icon(Icons.document_scanner),
                   label: Text(
-                    _isGenerating ? "Preparing..." : "Download Invoice",
+                    _isGenerating ? context.l10n.preparing : context.l10n.downloadInvoice,
                     style: TextStyle(
                       color: Common.primary,
                       fontSize: Common.h3,

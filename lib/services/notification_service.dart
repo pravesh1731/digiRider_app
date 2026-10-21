@@ -1,214 +1,218 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../NavMain.dart';
 import '../global/Common.dart';
 import '../global/my_app_state.dart';
-import '../booking/IncomingBookingPage.dart';
-import '../NavMain.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
 
+  static const String channelId = 'order_channel_id';
+  static const String channelName = 'Order Notifications';
+  static const String channelDescription = 'Notifications for new ride orders';
+  static const String _enabledKey = 'notificationsEnabled';
+  static const String _payload = 'incoming_booking';
+
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-  FlutterLocalNotificationsPlugin();
+      FlutterLocalNotificationsPlugin();
 
-  Future<void> saveFcmTokenLocally(String token) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? existingToken = prefs.getString('deviceToken');
-    if (existingToken != token) {
-      await prefs.setString('deviceToken', token);
-      print("✅ FCM Token saved in SharedPreferences");
-      print("Token: $token");
-      
-      // TODO: Send token to backend server
-      // await _sendTokenToServer(token);
-    } else {
-      print("🔄 FCM Token unchanged: $token");
-    }
-  }
+  // Emits every FCM message received while the app is open so order lists can refresh at once.
+  final StreamController<RemoteMessage> _messages = StreamController<RemoteMessage>.broadcast();
+  Stream<RemoteMessage> get onMessage => _messages.stream;
 
-  Future<void> _sendTokenToServer(String token) async {
-    // Implement API call to save token to backend
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final email = prefs.getString('email');
-      
-      if (email != null && email.isNotEmpty) {
-        final response = await http.post(
-          Uri.parse('${Common.baseUrl}api/rider/updateDeviceToken'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'email': email,
-            'deviceToken': token,
-          }),
-        );
-        
-        if (response.statusCode == 200) {
-          print("✅ Device token sent to server successfully");
-        } else {
-          print("❌ Failed to send device token to server: ${response.statusCode}");
-        }
-      }
-    } catch (e) {
-      print("❌ Error sending device token to server: $e");
-    }
-  }
+  bool _localReady = false;
+  bool _listenersAttached = false;
 
-  Future<void> initialize() async {
-    // Create notification channel for Android
-    const AndroidInitializationSettings androidInitSettings =
-    AndroidInitializationSettings('@drawable/logo');
+  // Rider-facing titles/bodies sent by gotanbackend, translated for foreground notifications.
+  static const Map<String, String> _hindi = {
+    'New Rider Order': 'नया राइड ऑर्डर',
+    'Check the app to accept a new ride.': 'नई राइड स्वीकार करने के लिए ऐप खोलें।',
+    'New Parcel Order': 'नया पार्सल ऑर्डर',
+    'Check the app to accept a new parcel.': 'नया पार्सल स्वीकार करने के लिए ऐप खोलें।',
+    'New Digi Order Available!': 'नया डिजीस्टॉल ऑर्डर उपलब्ध है!',
+    'Check the app to accept a new order in Gotan.': 'गोटन में नया ऑर्डर स्वीकार करने के लिए ऐप खोलें।',
+  };
 
-    const InitializationSettings initSettings = InitializationSettings(
-      android: androidInitSettings,
+  /// Sets up the local notifications plugin and the Android channel. Safe to call from
+  /// the background isolate, so it never asks for permissions or touches FCM listeners.
+  Future<void> initLocalNotifications() async {
+    if (_localReady) return;
+
+    const initSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@drawable/logo'),
     );
-
     await flutterLocalNotificationsPlugin.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        print('🔔 Notification tapped: ${response.payload}');
-        _handleNotificationTap(response);
-      },
+      onDidReceiveNotificationResponse: _handleNotificationTap,
     );
 
-    // Create notification channel
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'order_channel_id',
-      'Order Notifications',
-      description: 'Notifications for new ride orders',
+    const channel = AndroidNotificationChannel(
+      channelId,
+      channelName,
+      description: channelDescription,
       importance: Importance.max,
       enableVibration: true,
       playSound: true,
     );
-
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
 
-    // Request notification permissions for Android 13+
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-
-    // Get token on app start
-    FirebaseMessaging.instance.getToken().then((token) {
-      if (token != null) {
-        print("🔑 FCM Token: $token");
-        saveFcmTokenLocally(token);
-      }
-    });
-
-    // Listen for token refresh
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      print("🔄 Refreshed FCM Token: $newToken");
-      saveFcmTokenLocally(newToken);
-    });
-
-    // Handle foreground messages
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('📢 Foreground message received');
-      print('Title: ${message.notification?.title}');
-      print('Body: ${message.notification?.body}');
-      print('Data: ${message.data}');
-
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
-
-      if (notification != null) {
-        flutterLocalNotificationsPlugin.show(
-          notification.hashCode,
-          notification.title ?? 'New Order',
-          notification.body ?? 'You have a new ride request',
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              'order_channel_id',
-              'Order Notifications',
-              channelDescription: 'Notifications for new ride orders',
-              importance: Importance.max,
-              priority: Priority.high,
-              icon: '@drawable/logo',
-              showWhen: true,
-              enableVibration: true,
-              playSound: true,
-              actions: [
-                AndroidNotificationAction(
-                  'view_order',
-                  'View Order',
-                  showsUserInterface: true,
-                ),
-              ],
-            ),
-          ),
-          payload: 'incoming_booking', // Add payload to identify notification type
-        );
-      }
-    });
-
-    // Handle when app is opened from notification (when app was in background)
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('📱 App opened from notification');
-      print('Title: ${message.notification?.title}');
-      print('Body: ${message.notification?.body}');
-      print('Data: ${message.data}');
-      
-      // Navigate to IncomingBookingPage when app is opened from notification
-      _navigateToIncomingBooking();
-    });
-
-    // Check if app was opened from a terminated state by a notification
-    FirebaseMessaging.instance.getInitialMessage().then((RemoteMessage? message) {
-      if (message != null) {
-        print('🚀 App launched from notification');
-        print('Title: ${message.notification?.title}');
-        print('Body: ${message.notification?.body}');
-        print('Data: ${message.data}');
-        
-        // No need to navigate here - SplashScreen will handle initial navigation
-        print('📍 Navigation will be handled by SplashScreen');
-      }
-    });
-
-    print("📡 Firebase onMessage listener attached globally.");
+    _localReady = true;
   }
 
-  // Call this when switching user accounts (logout/login)
-  // Future<void> resetFcmToken() async {
-  //   await FirebaseMessaging.instance.deleteToken();
-  //   String? token = await FirebaseMessaging.instance.getToken();
-  //   if (token != null) {
-  //     print("🔑 FCM Token: $token");
-  //     saveFcmTokenLocally(token);
-  //     //call here
-  //   }
-  // }
+  /// Main-isolate setup: FCM listeners, token sync and tap handling.
+  Future<void> initialize() async {
+    await initLocalNotifications();
+    if (_listenersAttached) return;
+    _listenersAttached = true;
 
-  Future<void> resetFcmToken() async {
-    await FirebaseMessaging.instance.deleteToken();
-    String? token = await FirebaseMessaging.instance.getToken();
-    if (token != null) {
-      print("🔑 FCM Token: $token");
-      await saveFcmTokenLocally(token);
+    await FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      _saveAndRegisterToken(token);
+    });
+
+    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+
+    // App was in the background and the rider tapped the system notification.
+    FirebaseMessaging.onMessageOpenedApp.listen((_) => openIncomingBookings());
+
+    unawaited(syncToken());
+  }
+
+  Future<bool> isEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_enabledKey) ?? true;
+  }
+
+  /// Asks for the Android 13+ notification permission. Returns true when notifications can be shown.
+  Future<bool> requestPermission() async {
+    try {
+      final settings = await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
+      if (settings.authorizationStatus == AuthorizationStatus.denied) return false;
+    } catch (e) {
+      debugPrint('Notification permission request failed: $e');
+    }
+    return areNotificationsEnabled();
+  }
+
+  /// Gets the current FCM token and stores it on the rider record, which is what
+  /// gotanbackend uses to send "new order" pushes to every rider in the city.
+  Future<void> syncToken() async {
+    if (!await isEnabled()) return;
+    try {
+      await FirebaseMessaging.instance.setAutoInitEnabled(true);
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) await _saveAndRegisterToken(token);
+    } catch (e) {
+      debugPrint('Could not get FCM token: $e');
     }
   }
 
-  // Test notification method for debugging
-  Future<void> showTestNotification() async {
+  /// Turns order notifications on or off, like the "Allow Notifications" switch on the website.
+  /// Turning them off deletes the FCM token so the backend can no longer reach this device.
+  Future<bool> setEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_enabledKey, enabled);
+
+    if (enabled) {
+      final granted = await requestPermission();
+      await syncToken();
+      return granted;
+    }
+
+    try {
+      await FirebaseMessaging.instance.setAutoInitEnabled(false);
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (e) {
+      debugPrint('Could not delete FCM token: $e');
+    }
+    await prefs.remove('deviceToken');
+    return false;
+  }
+
+  /// Called on logout so the previous rider stops receiving this city's orders on this phone.
+  Future<void> onLogout() async {
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+    } catch (e) {
+      debugPrint('Could not delete FCM token: $e');
+    }
+  }
+
+  Future<void> _saveAndRegisterToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(_enabledKey) ?? true)) return;
+    await prefs.setString('deviceToken', token);
+
+    final email = prefs.getString('email') ?? '';
+    if (email.isEmpty) return;
+
+    try {
+      final response = await http.post(
+        Uri.parse('${Common.baseUrl}api/auth/gettoken'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'deviceToken': token}),
+      );
+      debugPrint('Device token registered: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('Error sending device token to server: $e');
+    }
+  }
+
+  Future<void> _onForegroundMessage(RemoteMessage message) async {
+    _messages.add(message);
+    if (!await isEnabled()) return;
+
+    final title = message.notification?.title ?? message.data['title']?.toString();
+    final body = message.notification?.body ?? message.data['body']?.toString();
+    await _show(message.hashCode, title, body);
+  }
+
+  /// Shows data-only messages received while the app is in the background or killed.
+  /// Messages with a `notification` block are already shown by Android itself.
+  Future<void> showBackgroundNotification(RemoteMessage message) async {
+    if (message.notification != null) return;
+    final title = message.data['title']?.toString();
+    final body = message.data['body']?.toString();
+    if (title == null && body == null) return;
+
+    await initLocalNotifications();
+    await _show(message.hashCode, title, body);
+  }
+
+  Future<void> _show(int id, String? title, String? body) async {
+    final prefs = await SharedPreferences.getInstance();
+    final isHindi = (prefs.getString('languageCode') ?? 'hi') == 'hi';
+    String tr(String text) => isHindi ? (_hindi[text] ?? text) : text;
+
     await flutterLocalNotificationsPlugin.show(
-      999,
-      'Test Notification',
-      'This is a test notification to verify the system is working',
+      id,
+      tr(title ?? 'New Order'),
+      tr(body ?? 'Check the app to accept a new ride.'),
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'order_channel_id',
-          'Order Notifications',
-          channelDescription: 'Notifications for new ride orders',
+          channelId,
+          channelName,
+          channelDescription: channelDescription,
           importance: Importance.max,
           priority: Priority.high,
           icon: '@drawable/logo',
@@ -217,124 +221,57 @@ class NotificationService {
           playSound: true,
         ),
       ),
+      payload: _payload,
     );
-    print("🧪 Test notification sent");
   }
 
-  // Check notification permissions status
+  // Test notification method for the Settings screen
+  Future<void> showTestNotification() async {
+    await initLocalNotifications();
+    await _show(999, 'New Rider Order', 'Check the app to accept a new ride.');
+  }
+
   Future<bool> areNotificationsEnabled() async {
     final androidImplementation = flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    
     if (androidImplementation != null) {
-      final bool? result = await androidImplementation.areNotificationsEnabled();
-      print("📱 Notifications enabled: ${result ?? false}");
-      return result ?? false;
+      return await androidImplementation.areNotificationsEnabled() ?? false;
     }
     return false;
   }
 
-  // Test method to manually trigger navigation (for debugging)
-  void testNavigationToIncomingBooking() {
-    print('🧪 Testing navigation to IncomingBookingPage...');
-    _navigateToIncomingBooking();
+  /// True when the app was started by tapping one of our notifications (FCM or local).
+  Future<bool> launchedFromNotification() async {
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) return true;
+    final details = await flutterLocalNotificationsPlugin.getNotificationAppLaunchDetails();
+    return details?.didNotificationLaunchApp ?? false;
   }
 
-  // Handle notification tap and navigate to incoming booking page
   void _handleNotificationTap(NotificationResponse response) {
-    print('🚀 Notification tapped!');
-    print('🔍 Payload: ${response.payload}');
-    print('🔍 Action ID: ${response.actionId}');
-    
-    // Add a small delay to ensure the app is fully loaded
-    Future.delayed(Duration(milliseconds: 300), () {
-      _navigateToIncomingBooking();
-    });
+    openIncomingBookings();
   }
-  
-  void _navigateToIncomingBooking() {
-    print('🚀 Attempting to navigate to IncomingBookingPage tab...');
-    
-    // Use the global navigator key to navigate
-    final context = navigatorKey.currentContext;
-    if (context != null) {
-      print('✅ Navigator context found, navigating...');
-      
-      // Navigate to NavMain with IncomingBookingPage tab (index 0)
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(
-          builder: (context) => NavMain(initialIndex: 0), // Set to IncomingBookingPage tab
-        ),
-        (route) => false, // Remove all previous routes to ensure clean navigation
-      );
-      
-      print('✅ Navigation to IncomingBookingPage tab completed');
-    } else {
-      print('❌ Navigator context is null, retrying in 500ms...');
-      // Retry after a short delay if context is not available
-      Future.delayed(Duration(milliseconds: 500), () {
-        final retryContext = navigatorKey.currentContext;
-        if (retryContext != null) {
-          print('✅ Retry successful, navigating...');
-          Navigator.of(retryContext).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (context) => NavMain(initialIndex: 0),
-            ),
+
+  /// Opens the Incoming Bookings tab, waiting for the navigator if the app is still starting.
+  Future<void> openIncomingBookings() async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      final navigator = navigatorKey.currentState;
+      if (navigator != null) {
+        final prefs = await SharedPreferences.getInstance();
+        if (!(prefs.getBool('isLoggedIn') ?? false)) return;
+
+        if (NavMain.isMounted) {
+          navigator.popUntil((route) => route.isFirst);
+          NavMain.selectTab(0);
+        } else {
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const NavMain(initialIndex: 0)),
             (route) => false,
           );
-          print('✅ Navigation to IncomingBookingPage tab completed (retry)');
-        } else {
-          print('❌ Still no navigator context available after retry');
-          // Try one more time after app is fully loaded
-          Future.delayed(Duration(seconds: 2), () {
-            final finalContext = navigatorKey.currentContext;
-            if (finalContext != null) {
-              print('✅ Final attempt successful, navigating...');
-              Navigator.of(finalContext).pushAndRemoveUntil(
-                MaterialPageRoute(
-                  builder: (context) => NavMain(initialIndex: 0),
-                ),
-                (route) => false,
-              );
-              print('✅ Navigation to IncomingBookingPage tab completed (final attempt)');
-            } else {
-              print('❌ Navigation failed - no context available');
-            }
-          });
         }
-      });
+        return;
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
     }
   }
-
-  // Handle background notifications
-  Future<void> showBackgroundNotification(RemoteMessage message) async {
-    print('📨 Background notification triggered');
-    print('Title: ${message.notification?.title}');
-    print('Body: ${message.notification?.body}');
-    print('Data: ${message.data}');
-
-    // Show background notification
-    if (message.notification != null) {
-      await flutterLocalNotificationsPlugin.show(
-        message.hashCode,
-        message.notification!.title ?? 'New Order',
-        message.notification!.body ?? 'You have a new ride request',
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            'order_channel_id',
-            'Order Notifications',
-            channelDescription: 'Notifications for new ride orders',
-            importance: Importance.max,
-            priority: Priority.high,
-            icon: '@drawable/logo',
-            showWhen: true,
-            enableVibration: true,
-            playSound: true,
-          ),
-        ),
-        payload: 'incoming_booking', // Add payload to identify notification type
-      );
-    }
-  }
-
 }

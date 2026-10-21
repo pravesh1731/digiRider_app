@@ -1,6 +1,4 @@
 import 'package:digirider/NavMain.dart';
-import 'package:digirider/pages/DocumentUploadPage.dart';
-import 'package:digirider/pages/GoogleSignInUp.dart';
 import 'package:digirider/pages/LandingPage.dart';
 import 'package:digirider/providers/NotificationProvider.dart';
 import 'package:digirider/providers/trip_provider.dart';
@@ -8,55 +6,25 @@ import 'package:digirider/services/notification_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
-import 'booking/IncomingBookingPage.dart';
 import 'firebase_options.dart';
 import 'global/Common.dart';
-import 'home/TripFlowPage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'gen_l10n/app_localizations.dart';
 import 'global/my_app_state.dart';
 
 // Background message handler
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp();
-  
-  // Use the NotificationService for background notifications
-  await NotificationService().initialize();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Messages with a notification block are shown by Android itself; only data-only ones need a local notification.
   await NotificationService().showBackgroundNotification(message);
 }
 
 
-// Future<Widget> _getInitialPage() async {
-//   final prefs = await SharedPreferences.getInstance();
-//   final isLoggedIn = prefs.getBool('isLoggedIn') ?? false;
-//   final email = prefs.getString('email');
-//   // final isDocumentUploaded = prefs.getBool('documentUploaded') ?? false;
-//
-//   // Null check for email
-//   if (!isLoggedIn || email == null || email.isEmpty) {
-//     // return GoogleLoginPage(); // Not logged in or email missing
-//     return LandingPage(); // Not logged in or email missing
-//   }
-//
-//   // Logged in, but documents not uploaded yet
-//   // if (!isDocumentUploaded && isLoggedIn) {
-//   //   // return DocumentUploadPage();
-//   //   return LandingPage();
-//   // }
-//
-//   // Logged in and documents uploaded
-//   return NavMain();
-// }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final tripProvider = TripProvider();
-  await tripProvider.loadActiveOrdersCount();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
@@ -66,13 +34,17 @@ void main() async {
   // Initialize notification service - single source of truth
   await NotificationService().initialize();
 
+  final tripProvider = TripProvider();
+  await tripProvider.loadActiveOrdersCount();
+  final initialLocale = await MyAppState.loadSavedLocale();
+
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => TripProvider()),
+        ChangeNotifierProvider.value(value: tripProvider),
         ChangeNotifierProvider(create: (context) => NotificationProvider()),
       ],
-      child: MyApp(),
+      child: MyApp(initialLocale: initialLocale),
     ),
   );
 
@@ -105,9 +77,7 @@ class _SplashScreenState extends State<SplashScreen> {
     }
 
     // Check if app was launched from notification
-    final RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
-      print('🚀 App launched from notification - directing to IncomingBookingPage');
+    if (await NotificationService().launchedFromNotification()) {
       return NavMain(initialIndex: 0); // Go directly to IncomingBookingPage tab
     }
 
