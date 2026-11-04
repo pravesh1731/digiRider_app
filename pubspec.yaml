@@ -1,7 +1,7 @@
 name: digirider
 description: "A new Flutter project."
 publish_to: "none"
-version: 1.0.7+12
+version: 1.0.0+1
 
 environment:
   sdk: ^3.7.2
@@ -28,7 +28,7 @@ dependencies:
   pdf: ^3.10.4
   printing: ^5.11.0
   qr_flutter: ^4.1.0
-  font_awesome_flutter: ^10.8.0
+  font_awesome_flutter: ^11.0.0
   firebase_messaging: ^15.2.7
   flutter_local_notifications: ^19.2.1
   flutter_localizations:
@@ -56,6 +56,39 @@ flutter:
     - assets/images/
     - assets/images/app_icon.png
   fonts:
+    # Fonts of the rider website (rider.digistall.in). Poppins is the Devanagari fallback.
+    - family: Geist
+      fonts:
+        - asset: assets/fonts/Geist-Regular.ttf
+        - asset: assets/fonts/Geist-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Geist-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Geist-Bold.ttf
+          weight: 700
+    - family: GeistMono
+      fonts:
+        - asset: assets/fonts/GeistMono-Regular.ttf
+        - asset: assets/fonts/GeistMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/GeistMono-SemiBold.ttf
+          weight: 600
+    - family: InstrumentSerif
+      fonts:
+        - asset: assets/fonts/InstrumentSerif-Regular.ttf
+        - asset: assets/fonts/InstrumentSerif-Italic.ttf
+          style: italic
+    - family: Poppins
+      fonts:
+        - asset: assets/fonts/Poppins-Regular.ttf
+        - asset: assets/fonts/Poppins-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Poppins-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Poppins-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Poppins-ExtraBold.ttf
+          weight: 800
     - family: bevan
       fonts:
         - asset: assets/fonts/sans.ttf

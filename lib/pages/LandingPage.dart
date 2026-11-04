@@ -1,953 +1,122 @@
-import 'package:digirider/global/Common.dart';
 import 'package:digirider/pages/GoogleSignInUp.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:shimmer/shimmer.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../global/l10n.dart';
 import '../global/my_app_state.dart';
+import '../ui/cap_visuals.dart';
+import '../ui/pickers.dart';
+import '../ui/widgets.dart';
 import '../utils/show_exit_dialog.dart';
 
-
-class LandingPage extends StatefulWidget {
+/// The website's landing screen: live map hero, a "new request" teaser, the headline and the CTA.
+class LandingPage extends StatelessWidget {
   const LandingPage({super.key});
 
-  @override
-  State<LandingPage> createState() => _LandingPageState();
-}
-
-class _LandingPageState extends State<LandingPage> {
-
-  @override
-  void initState() {
-    super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      SystemChrome.setSystemUIOverlayStyle(
-        const SystemUiOverlayStyle(
-          systemNavigationBarColor: Colors.black,
-          systemNavigationBarIconBrightness: Brightness.light,
-        ),
-      );
-    });
+  void _open(BuildContext context, {bool signUp = false}) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => GoogleLoginPage(isSignUp: signUp)));
   }
+
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () => showExitConfirmationDialogWhite(context),
-      child: Scaffold(
-        backgroundColor: Common.secondary,
-        appBar: AppBar(
-          elevation: 0,
-          toolbarHeight: 60,
-          centerTitle: false,
-          title: Padding(
-            padding: const EdgeInsets.only(left: 0),
-            child: Text(
-              context.l10n.appName,
-              style: TextStyle(fontSize: 20, fontFamily: 'bold'),
-            ),
-          ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 12.0),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _languageToggle(),
-                  SizedBox(width: 4),
-                  GestureDetector(
-                    onTap: () => {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => GoogleLoginPage(isSignUp: true),),),
-                    },
-                    child: Card(
-                      elevation: 4,
-                      shadowColor: Common.primary,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          child: Text(
-                            context.l10n.signUp,
-                            style: TextStyle(
-                              fontSize: Common.h2,
-                              fontFamily: 'bold',
-                              color: Common.secondary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => GoogleLoginPage(),),),
-                    },
-                    child: Card(
-                      elevation: 4,
-                      shadowColor: Common.primary,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Common.primary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          child: Text(
-                            context.l10n.login,
-                            style: TextStyle(
-                              fontSize: Common.h2,
-                              fontFamily: 'bold',
-                              color: Common.secondary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        body: SafeArea(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.white,
-                  Colors.black,
-                ],
-              ),
-            ),
-            child: Stack(
-              children: [
-                SingleChildScrollView(
-                  padding: const EdgeInsets.only(right: 16, left: 16, top: 10, bottom: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionTitle1(context.l10n.welcomeToDigitalRider),
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: EdgeInsets.zero,
-                        child: _buildHeroSection(),
-                      ),
-                      const SizedBox(height: 20),
-                      _buildSectionTitle(context.l10n.whereDoWeGetOrders),
-                      const SizedBox(height: 16),
-                      // _buildOrderSources(),
-                      const OrderSourcesSection(),
+    final p = context.cap;
+    final l10n = context.l10n;
+    final app = context.findAncestorStateOfType<MyAppState>();
+    final lang = (app?.locale ?? Localizations.localeOf(context)).languageCode;
+    final top = MediaQuery.of(context).padding.top;
 
-                      const SizedBox(height: 10),
-                      _buildSectionTitle(context.l10n.onboardingProcess),
-                      const SizedBox(height: 16),
-                      _buildOnboardingSteps(),
-                      const SizedBox(height: 20),
-                      _buildSectionTitle(context.l10n.benefitsTitle),
-                      const SizedBox(height: 20),
-                      _buildBenefits(),
-                      const SizedBox(height: 20),
-                      _buildSectionTitle(context.l10n.aboutUs),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E1E1E),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.deepPurple.withOpacity(0.3), width: 1.5),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.deepPurple.withOpacity(0.1),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              context.l10n.aboutUsText,
-                              textAlign: TextAlign.left,
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontFamily: 'bold',
-                                color: Colors.white70,
-                                height: 1.5,
-                              ),
-                            ),
-                          ],
-                        ),
+    Widget stat(String value, String label) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value, style: CapText.serif(size: 32, color: p.tx, height: 1)),
+            const SizedBox(height: 4),
+            KLabel(label, padding: EdgeInsets.zero),
+          ],
+        );
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (!didPop && await showExitConfirmationDialogWhite(context)) SystemNavigator.pop();
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: capOverlay(p),
+        child: Scaffold(
+          backgroundColor: p.bg,
+          body: Stack(
+            children: [
+              const Positioned(left: 0, right: 0, top: 0, child: MapHero(height: 420, fadeHeight: 220)),
+              ListView(
+                padding: EdgeInsets.fromLTRB(20, top + 20, 20, 40),
+                children: [
+                  Row(
+                    children: [
+                      const CapLogo(),
+                      const Spacer(),
+                      CapSeg<String>(
+                        small: true,
+                        value: lang,
+                        onChanged: (v) => app?.setLocale(Locale(v)),
+                        items: const [SegItem('en', 'En'), SegItem('hi', 'हि')],
                       ),
-                      SizedBox(height: 10,),
-                      _buildFooter(),
+                      const SizedBox(width: 8),
+                      CapChip(label: l10n.cLogIn, weight: FontWeight.w600, onTap: () => _open(context)),
                     ],
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        bottomNavigationBar: Container(
-          color: Common.secondary,
-          height: 0,
-          child: const SizedBox(),
-        ),
-      ),
-    );
-  }
-
-  Widget _languageToggle() {
-    final myAppState = context.findAncestorStateOfType<MyAppState>();
-    final isHindi = Localizations.localeOf(context).languageCode == 'hi';
-    return GestureDetector(
-      onTap: () => myAppState?.setLocale(Locale(isHindi ? 'en' : 'hi')),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          border: Border.all(color: Common.secondary),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          isHindi ? 'EN' : 'हिं',
-          style: TextStyle(fontSize: Common.h2, fontFamily: 'bold', color: Common.secondary),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeroSection() {
-    return Card(
-      elevation: 6,
-      color: Common.secondary,
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: Common.secondary,
-          borderRadius: BorderRadius.circular(14)
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.start,
-          children: [
-            _animatedFeatureCard(
-              index: 0,
-              isFullWidth: true,
-              color: Colors.indigo,
-              descWidget: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(height: 6,),
-                  _featureRow(
-                    icon: Icons.currency_rupee,
-                    title: context.l10n.earnPerDay,
-                    desc: context.l10n.earnPerDayDesc,
-                    color: Colors.green,
-                  ),
-                  const SizedBox(height: 12),
-                  _featureRow(
-                    icon: Icons.directions_bike,
-                    title: context.l10n.driveAnyVehicle,
-                    desc: context.l10n.driveAnyVehicleDesc,
-                    color: Colors.indigo,
-                  ),
-                  const SizedBox(height: 12),
-                  _featureRow(
-                    icon: Icons.check_circle,
-                    title: context.l10n.threeStepOnboarding,
-                    desc: context.l10n.threeStepOnboardingDesc,
-                    color: Colors.purple,
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 6,),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _animatedFeatureCard({
-    required int index,
-    required Color color,
-    required bool isFullWidth,
-    Widget? descWidget,
-  }) {
-    return Container(
-      width: isFullWidth ? double.infinity : MediaQuery.of(context).size.width / 2 - 24,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: descWidget ?? const SizedBox(),
-    );
-  }
-
-  Widget _featureRow({
-    required IconData icon,
-    required String title,
-    required String desc,
-    required Color color,
-  }) {
-    return Row(
-
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 5.0),
-          child: CircleAvatar(
-            radius: 14,
-            backgroundColor: color,
-            child: Icon(icon, color: Colors.white, size: 18),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: Colors.white, // changed from white
-                  fontFamily: 'bold',
-                  fontSize: Common.h2,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                desc,
-                style: TextStyle(color: Colors.white60, fontSize: Common.h3, fontFamily: 'bold'), // changed from white70
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 20,
-          fontFamily: 'bold',
-          fontWeight: FontWeight.bold,
-          color: Common.secondary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionTitle1(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 10),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 30,
-          fontWeight: FontWeight.w900,
-          fontFamily: 'bold',
-          letterSpacing: 1.3,
-        ),
-      ),
-    );
-  }
-
-
-  Widget _buildOnboardingSteps() {
-    final List<Map<String, dynamic>> steps = [
-      {
-        "title": context.l10n.basicInfo,
-        "desc": context.l10n.basicInfoDesc,
-        "icon": Icons.person,
-        "color": Colors.indigo,
-      },
-      {
-        "title": context.l10n.documents,
-        "desc": context.l10n.documentsDesc,
-        "icon": Icons.file_copy,
-        "color": Colors.purple,
-      },
-      {
-        "title": context.l10n.verification,
-        "desc": context.l10n.verificationDesc,
-        "icon": Icons.verified_user,
-        "color": Colors.pink,
-      },
-    ];
-
-    return Wrap(
-      spacing: 16,
-      runSpacing: 16,
-      children: List.generate(steps.length, (index) {
-        final step = steps[index];
-        return _animatedOnboardingCard(
-          index: index,
-          title: step['title'],
-          desc: step['desc'],
-          icon: step['icon'],
-          color: step['color'],
-        );
-      }),
-    );
-  }
-
-  Widget _animatedOnboardingCard({
-    required int index,
-    required String title,
-    required String desc,
-    required IconData icon,
-    required Color color,
-  }) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      width: MediaQuery.of(context).size.width / 2 - 24,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.6), width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.3),
-            blurRadius: 6,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontFamily: 'bold',
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            desc,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBenefits() {
-    final List<Map<String, dynamic>> benefits = [
-      {
-        "title": context.l10n.flexibleSchedule,
-        "desc": context.l10n.flexibleScheduleDesc,
-        "icon": Icons.schedule,
-        "color": Colors.indigo,
-      },
-      {
-        "title": context.l10n.competitiveEarnings,
-        "desc": context.l10n.competitiveEarningsDesc,
-        "icon": Icons.monetization_on,
-        "color": Colors.purple,
-      },
-      {
-        "title": context.l10n.regularOrders,
-        "desc": context.l10n.regularOrdersDesc,
-        "icon": Icons.list_alt,
-        "color": Colors.pink,
-      },
-      {
-        "title": context.l10n.supportiveCommunity,
-        "desc": context.l10n.supportiveCommunityDesc,
-        "icon": Icons.people_alt,
-        "color": Colors.blue,
-      },
-      {
-        "title": context.l10n.training,
-        "desc": context.l10n.trainingDesc,
-        "icon": Icons.school,
-        "color": Colors.teal,
-      },
-      {
-        "title": context.l10n.healthSafety,
-        "desc": context.l10n.healthSafetyDesc,
-        "icon": Icons.health_and_safety,
-        "color": Colors.green,
-      },
-    ];
-
-    return Wrap(
-      spacing: 16,
-      runSpacing: 16,
-      children: List.generate(benefits.length, (index) {
-        final item = benefits[index];
-        return _animatedBenefitCard(
-          index: index,
-          title: item['title'],
-          desc: item['desc'],
-          icon: item['icon'],
-          color: item['color'],
-        );
-      }),
-    );
-  }
-
-  Widget _animatedBenefitCard({
-    required int index,
-    required String title,
-    required String desc,
-    required IconData icon,
-    required Color color,
-  }) {
-    return TweenAnimationBuilder<Offset>(
-      tween: Tween<Offset>(begin: Offset(0, 0.2), end: Offset.zero),
-      duration: Duration(milliseconds: 300 + (index * 100)),
-      curve: Curves.easeOut,
-      builder: (context, offset, child) {
-        return Transform.translate(offset: offset * 100, child: child);
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 400),
-        width: MediaQuery.of(context).size.width / 2 - 24,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E1E1E),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.6), width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.3),
-              blurRadius: 6,
-              offset: Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontFamily: 'bold',
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              desc,
-              style: const TextStyle(color: Colors.white70, fontSize: 14),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBenefitCard(
-    String title,
-    String desc,
-    IconData icon,
-    Color borderColor,
-  ) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(
-        side: BorderSide(color: borderColor, width: 3),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: ListTile(
-        leading: Icon(icon, color: borderColor, size: 28),
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontFamily: 'bold',
-          ),
-        ),
-        subtitle: Text(desc),
-      ),
-    );
-  }
-
-  void _launchUrl(String url) async {
-    if (url.isEmpty) return;
-
-    final uri = Uri.parse(url);
-    try {
-      final canLaunchIt = await canLaunchUrl(uri);
-      if (!canLaunchIt) {
-        throw 'Cannot launch $url';
-      }
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      debugPrint('Error launching URL: $e');
-      // You can show a snackbar or alert if needed.
-    }
-  }
-
-
-
-  Widget _buildFooter() {
-    return Container(
-
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      decoration: BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Heading
-          Text(
-            context.l10n.appName,
-            style: TextStyle(
-              fontSize: 18,
-              fontFamily: 'bold',
-              color: Colors.white,
-              letterSpacing: 0.8,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Contact Info
-          _infoRow(Icons.call, "+91 9461852060", Colors.greenAccent),
-          const SizedBox(height: 10),
-          _infoRow(Icons.email, "humansofruralindia@gmail.com", Colors.redAccent),
-          const SizedBox(height: 10),
-          _infoRow(Icons.location_on, "7 Siyag House, Gotan, Rajasthan 342902", Colors.amberAccent),
-          const SizedBox(height: 20),
-
-          // Social Icons
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: () => _launchUrl('https://www.facebook.com/humansofruralindia/'),
-                  child: _socialIcon(FontAwesomeIcons.facebookF, Colors.white),
-                ),
-                const SizedBox(width: 14),
-                InkWell(
-                  onTap: () => _launchUrl('https://www.linkedin.com/company/humans-of-rural-india/'),
-                  child: _socialIcon(FontAwesomeIcons.linkedinIn, Colors.white),
-                ),
-                const SizedBox(width: 14),
-                InkWell(
-                  onTap: () => _launchUrl('https://www.instagram.com/digistallapp/'),
-                  child: _socialIcon(FontAwesomeIcons.instagram, Colors.white),
-                ),
-                const SizedBox(width: 14),
-                InkWell(
-                  onTap: () => _launchUrl('https://x.com/DigistallApp'),
-                  child: _socialIcon(FontAwesomeIcons.xTwitter, Colors.white),
-                ),
-                const SizedBox(width: 14),
-                InkWell(
-                  onTap: () => _launchUrl('https://www.youtube.com/@digistall'),
-                  child: _socialIcon(FontAwesomeIcons.youtube, Colors.white),
-                ),
-              ],
-            ),
-          ),
-
-
-          const SizedBox(height: 10),
-          const Divider(color: Colors.white24),
-          const SizedBox(height: 5),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            children: [
-              _footerChip(Icons.mail_outline, context.l10n.newsletter, () => _launchUrl("https://digistall.substack.com/"),),
-              _footerChip(Icons.privacy_tip_outlined, context.l10n.privacyPolicy, () => _launchUrl("https://gotan.in/privacy-policy-rider"),),
-              _footerChip(Icons.article_outlined, context.l10n.terms, () => _launchUrl("https://digistall.in/terms_and_conditions"),),
-            ],
-          ),
-
-
-          const SizedBox(height: 12),
-
-          // Legal
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Siyag Rural Market Private Limited © Digistall",
-                    style: TextStyle(color: Colors.white70, fontSize: 13),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    "CIN: U52100RJ2021PTC077111",
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    "GSTIN: 08ABGCS8909L1ZN",
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _footerChip(IconData icon, String text, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white12,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white70, size: 16),
-            const SizedBox(width: 6),
-            Text(text, style: TextStyle(color: Colors.white, fontSize: Common.h3)),
-          ],
-        ),
-      ),
-    );
-  }
-
-
-
-  Widget _infoRow(IconData icon, String text, Color iconColor) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, color: iconColor, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _socialIcon(IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white12,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(icon, size: 16, color: color),
-    );
-  }
-
-
-
-}
-
-class OrderSourcesSection extends StatefulWidget {
-  const OrderSourcesSection({super.key});
-
-  @override
-  State<OrderSourcesSection> createState() => _OrderSourcesSectionState();
-}
-
-class _OrderSourcesSectionState extends State<OrderSourcesSection>
-    with TickerProviderStateMixin {
-  late final AnimationController _controller1 = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 500),
-  );
-
-  late final AnimationController _controller2 = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 500),
-  );
-
-  bool _expanded1 = false;
-  bool _expanded2 = false;
-
-  @override
-  void dispose() {
-    _controller1.dispose();
-    _controller2.dispose();
-    super.dispose();
-  }
-
-  void _toggleExpanded(int index) {
-    setState(() {
-      if (index == 1) {
-        _expanded1 = !_expanded1;
-        _expanded1 ? _controller1.forward() : _controller1.reverse();
-      } else {
-        _expanded2 = !_expanded2;
-        _expanded2 ? _controller2.forward() : _controller2.reverse();
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _buildAnimatedStepCard(
-          title: context.l10n.ordersFromGotanStore,
-          expanded: _expanded1,
-          onTap: () => _toggleExpanded(1),
-          controller: _controller1,
-          children: [
-            _buildSubItem(context.l10n.pickDropPerson, Colors.indigo, Colors.blue),
-            _buildSubItem(context.l10n.pickDropParcel, Colors.purple, Colors.pink),
-            SizedBox(height: 15,),
-          ],
-        ),
-        const SizedBox(height: 2),
-        _buildAnimatedStepCard(
-          title: context.l10n.ordersFromDigistall,
-          expanded: _expanded2,
-          onTap: () => _toggleExpanded(2),
-          controller: _controller2,
-          children: [
-            _buildSubItem(
-              context.l10n.deliverDigistallOrders,
-              Colors.green,
-              Colors.teal,
-            ),
-            SizedBox(height: 15,),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAnimatedStepCard({
-    required String title,
-    required bool expanded,
-    required VoidCallback onTap,
-    required AnimationController controller,
-    required List<Widget> children,
-  }) {
-    final slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -0.05),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: controller, curve: Curves.easeOut));
-
-    final fadeAnimation = CurvedAnimation(
-      parent: controller,
-      curve: Curves.easeInOut,
-    );
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: Common.secondary,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white24),
-      ),
-      child: Column(
-        children: [
-          InkWell(
-            onTap: onTap,
-            child: Container(
-              padding: const EdgeInsets.only(
-                top: 12,
-                bottom: 12,
-                left: 20,
-                right: 20,
-              ),
-              width: double.infinity,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ShaderMask(
-                      shaderCallback: (bounds) {
-                        return const LinearGradient(
-                          colors: [Colors.white, Colors.white],
-                        ).createShader(bounds);
-                      },
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: Common.h2,
-                          color: Colors.white,
-                          fontFamily: 'bold',
-                          fontWeight: Common.weight2
-                        ),
+                  const SizedBox(height: 110),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Glass(
+                      radius: 20,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const LiveDot(),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              KLabel(l10n.cNewRequest, padding: EdgeInsets.zero),
+                              const SizedBox(height: 2),
+                              Text(l10n.cStoreDelivery, style: CapText.sans(size: 14, weight: FontWeight.w600, color: p.tx)),
+                            ],
+                          ),
+                          const SizedBox(width: 20),
+                          Text('₹400', style: CapText.serif(size: 24, color: p.amx, height: 1)),
+                        ],
                       ),
                     ),
                   ),
-                  Icon(
-                    expanded ? Icons.expand_less : Icons.expand_more,
-                    color: Colors.white,
+                  const SizedBox(height: 14),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: l10n.cHeroPre),
+                        TextSpan(text: l10n.cHeroEm, style: CapText.serif(size: 50, color: p.amx, height: 0.98, italic: true)),
+                        TextSpan(text: l10n.cHeroPost),
+                      ],
+                    ),
+                    style: CapText.serif(size: 50, color: p.tx, height: 0.98),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(l10n.cHeroSub, style: CapText.sans(size: 15.5, color: p.mu, height: 1.45)),
+                  const SizedBox(height: 22),
+                  CapButton(label: l10n.cStartEarning, trailingIcon: CapIcons.arr, onPressed: () => _open(context, signUp: true)),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      stat('₹1,000', l10n.cDailyPotential),
+                      stat('${kVehicles.length}', l10n.cVehicleTypes),
+                      stat('${kCities.length}', l10n.cServiceCities),
+                    ],
                   ),
                 ],
               ),
-            ),
+            ],
           ),
-          SizeTransition(
-            sizeFactor: fadeAnimation,
-            child: FadeTransition(
-              opacity: fadeAnimation,
-              child: SlideTransition(
-                position: slideAnimation,
-                child: Column(children: children),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSubItem(String text, Color color1, Color color2) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
-      // padding: const EdgeInsets.symmetric(),
-      decoration: BoxDecoration(
-        color: Common.secondary, // your dark secondary color
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.arrow_right_alt, color: Colors.white),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(color: Colors.white, fontFamily: 'bold', fontSize: Common.h2, fontWeight: Common.weight2),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

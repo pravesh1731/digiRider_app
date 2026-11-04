@@ -8,7 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'firebase_options.dart';
-import 'global/Common.dart';
+import 'ui/splash.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'global/my_app_state.dart';
 
@@ -37,6 +37,7 @@ void main() async {
   final tripProvider = TripProvider();
   await tripProvider.loadActiveOrdersCount();
   final initialLocale = await MyAppState.loadSavedLocale();
+  final initialDark = await MyAppState.loadSavedDark();
 
   runApp(
     MultiProvider(
@@ -44,7 +45,7 @@ void main() async {
         ChangeNotifierProvider.value(value: tripProvider),
         ChangeNotifierProvider(create: (context) => NotificationProvider()),
       ],
-      child: MyApp(initialLocale: initialLocale),
+      child: MyApp(initialLocale: initialLocale, initialDark: initialDark),
     ),
   );
 
@@ -78,10 +79,10 @@ class _SplashScreenState extends State<SplashScreen> {
 
     // Check if app was launched from notification
     if (await NotificationService().launchedFromNotification()) {
-      return NavMain(initialIndex: 0); // Go directly to IncomingBookingPage tab
+      return const NavMain(initialIndex: NavMain.home); // New-order push: Home shows the request
     }
 
-    return NavMain(); // Logged in - default to home tab
+    return const NavMain();
   }
 
   @override
@@ -92,36 +93,15 @@ class _SplashScreenState extends State<SplashScreen> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => nextPage),
+        PageRouteBuilder(
+          transitionDuration: const Duration(milliseconds: 500),
+          pageBuilder: (_, __, ___) => nextPage,
+          transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        ),
       );
     });
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Common.primary,
-      appBar: AppBar(
-        elevation: 0,
-        toolbarHeight: 0,
-        backgroundColor: Common.primary,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // 🟡 You can use your logo or animation here
-            Image.asset('assets/images/app_icon.png', height: 130),
-            // const SizedBox(height: 20),
-            // const CircularProgressIndicator(color: Colors.white),
-          ],
-        ),
-      ),
-      bottomNavigationBar: Container(
-        color: Common.primary,
-        height: 0,
-        child: const SizedBox(),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const CaptainSplash();
 }

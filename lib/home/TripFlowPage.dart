@@ -1,29 +1,29 @@
 import 'dart:convert';
-import 'dart:async';
 
-import 'package:digirider/NavMain.dart';
-import 'TripCompletePage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_svg/svg.dart';
-import 'package:intl/intl.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
-import 'package:slide_to_act/slide_to_act.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:http/http.dart' as http;
-import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
 
 import '../global/Common.dart';
 import '../global/l10n.dart';
+import '../model/cap_order.dart';
 import '../model/trip_stage.dart';
 import '../providers/trip_provider.dart';
-import '../utils/_TimedSnackBar.dart';
-import '../utils/bottomSnackBar.dart';
+import '../services/rider_feed.dart';
+import '../ui/cap_visuals.dart';
+import '../ui/order_actions.dart';
+import '../ui/widgets.dart';
+import 'HomePage.dart' show tripStageLabel;
+import 'TripCompletePage.dart';
 
+/// Active trip, laid out like the website's trip sheet over the live map.
+/// Stage 1 (`reachPickup`): rides/parcels verify the customer OTP and go "In Transit";
+/// Digistall orders just confirm pickup. Stage 2 (`inProgress`): mark "Delivered"
+/// (Digistall orders send the customer's delivery OTP when the order has one).
 class TripFlowPage extends StatefulWidget {
   final String tripId;
   final String endpointPost;
@@ -41,35 +41,25 @@ class TripFlowPage extends StatefulWidget {
 }
 
 class _TripFlowPageState extends State<TripFlowPage> {
-  // TripStage currentStage = TripStage.reachPickup;
   bool _isLoading = false;
-  late TextEditingController _otpController;
-  // Digistall orders: the customer's delivery OTP, checked by api/digiorder/setorderStatus on "Delivered".
-  late TextEditingController _deliveryOtpController;
+  String _otp = '';
+  int _shakeTick = 0;
+  bool _cashCollected = false;
 
   bool get _isDigistall => widget.endpointPost == 'api/digiorder/setorderStatus';
+  CapOrder get _o => CapOrder({...widget.order, 'endpointPost': widget.endpointPost});
 
   // Older Digistall orders have no OTP; the backend only checks it when one is set.
   bool get _needsDeliveryOtp => _isDigistall && (widget.order['otp']?.toString().isNotEmpty ?? false);
 
+  bool _needsOtp(TripStage stage) => stage == TripStage.inProgress ? _needsDeliveryOtp : !_isDigistall;
+
   @override
   void initState() {
     super.initState();
-    _otpController = TextEditingController();
-    _deliveryOtpController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<TripProvider>(
-        context,
-        listen: false,
-      ).loadTripStage(widget.tripId, riderStatus: widget.order['riderStatus']?.toString());
+      Provider.of<TripProvider>(context, listen: false).loadTripStage(widget.tripId, riderStatus: widget.order['riderStatus']?.toString());
     });
-  }
-
-  @override
-  void dispose() {
-    _otpController.dispose();
-    _deliveryOtpController.dispose();
-    super.dispose();
   }
 
   Future<bool> _callStageApi(TripStage? currentStage) async {
@@ -83,13 +73,12 @@ class _TripFlowPageState extends State<TripFlowPage> {
       switch (currentStage) {
         case TripStage.reachPickup:
         case TripStage.readyToStart:
-          // Combined logic: Handle both pickup arrival and trip start
           payload = {
             "orderId": widget.order['_id'],
             "riderStatus": "In Transit",
             "email": email,
             if (!_isDigistall) "sellerPhone": widget.order['sellerPhone'],
-            if (!_isDigistall) "userOtp": _otpController.text.trim(),
+            if (!_isDigistall) "userOtp": _otp.trim(),
           };
           break;
 
@@ -99,7 +88,7 @@ class _TripFlowPageState extends State<TripFlowPage> {
             "riderStatus": "Delivered",
             "email": email,
             if (!_isDigistall) "sellerPhone": widget.order['sellerPhone'],
-            if (_isDigistall) "otp": _deliveryOtpController.text.trim(),
+            if (_isDigistall) "otp": _otp.trim(),
           };
           break;
 
@@ -107,11 +96,7 @@ class _TripFlowPageState extends State<TripFlowPage> {
           return false;
       }
 
-      final response = await http.post(
-        url,
-        body: jsonEncode(payload),
-        headers: {'Content-Type': 'application/json'},
-      );
+      final response = await http.post(url, body: jsonEncode(payload), headers: {'Content-Type': 'application/json'});
       if (!mounted) return false;
 
       if (response.statusCode != 200) {
@@ -119,79 +104,70 @@ class _TripFlowPageState extends State<TripFlowPage> {
         try {
           message = jsonDecode(response.body)['message'];
         } catch (_) {}
-        getSnackBar(context, message ?? l10n.actionFailed, Colors.orange, 2);
+        showCapToast(context, message ?? l10n.actionFailed, color: context.cap.rd);
         return false;
       }
 
-      showTimedSnackBar(
-        context,
-        currentStage == TripStage.inProgress ? l10n.tripCompletedSuccess : l10n.tripStarted,
-        Duration(seconds: 2),
-        'top',
-      );
+      showCapToast(context, currentStage == TripStage.inProgress ? l10n.tripCompletedSuccess : l10n.tripStarted);
       return true;
     } catch (e) {
       debugPrint('API Error: $e');
-      if (mounted) getSnackBar(context, l10n.somethingWentWrong, Colors.red, 2);
+      if (mounted) showCapToast(context, l10n.somethingWentWrong, color: context.cap.rd);
       return false;
     }
   }
 
-  Future<void> _nextStage() async {
+  Future<void> _submit(TripStage stage) async {
+    final l10n = context.l10n;
+    if (_needsOtp(stage) && _otp.trim().length < 4) {
+      setState(() => _shakeTick++);
+      showCapToast(context, l10n.cEnter4DigitOtp, color: context.cap.rd);
+      return;
+    }
+    if (stage == TripStage.inProgress && _isDigistall && _o.isCod && _o.codAmount > 0 && !_cashCollected) {
+      showCapToast(context, l10n.cConfirmCashFirst('${_o.codAmount}'), color: CapPalette.cod);
+      return;
+    }
+    setState(() => _isLoading = true);
+    await _nextStage();
+    if (mounted) setState(() => _isLoading = false);
+  }
 
+  Future<void> _nextStage() async {
     final tripProvider = Provider.of<TripProvider>(context, listen: false);
     final currentStage = tripProvider.currentStage;
 
-    bool success = await _callStageApi(currentStage);
-    setState(() => _isLoading = false);
-
+    final success = await _callStageApi(currentStage);
     if (!success) {
+      if (_needsOtp(currentStage ?? TripStage.reachPickup) && mounted) setState(() => _shakeTick++);
       return;
     }
+    if (!mounted) return;
 
-    // Success overlay
     await Navigator.of(context).push(
-      PageRouteBuilder(
-        opaque: false,
-        barrierDismissible: false,
-        pageBuilder: (_, __, ___) => const _SuccessOverlay(),
-      ),
+      PageRouteBuilder(opaque: false, barrierDismissible: false, pageBuilder: (_, __, ___) => const _SuccessOverlay()),
     );
+    if (!mounted) return;
+    RiderFeed.instance.refreshActive();
 
     if (currentStage == TripStage.inProgress) {
-      final tripProvider = Provider.of<TripProvider>(context, listen: false);
       await tripProvider.decrementActiveOrders();
       await tripProvider.completeTrip();
+      RiderFeed.instance.refreshHistory();
 
-      // Prepare data for TripCompletePage
       final notAvailable = context.l10n.notAvailable;
-      final pickup = widget.endpointPost == 'api/digiorder/setorderStatus'
-          ? (widget.order['sellerAddress'] ?? notAvailable)
-          : (widget.order['pickupAddress'] ?? notAvailable);
-      final destination = widget.endpointPost == 'api/digiorder/setorderStatus'
-          ? (widget.order['address'] ?? notAvailable)
-          : ((widget.order['deliveryAddress']?.toString().isNotEmpty ?? false)
-              ? widget.order['deliveryAddress']
-              : notAvailable);
-    final amount = widget.endpointPost == 'api/digiorder/setorderStatus'
-      ? (widget.order['totalCartValue']?.toString() ?? '0')
-      : (widget.order['expectedPrice']?.toString() ?? '0');
-    final couponTotal = widget.endpointPost == 'api/digiorder/setorderStatus'
-      ? (widget.order['coupontotal']?.toString())
-      : null;
+      final o = _o;
+      final pickup = o.pickupAddress.isEmpty ? notAvailable : o.pickupAddress;
+      final destination = o.dropAddress.isEmpty ? notAvailable : o.dropAddress;
+      final amount = _isDigistall ? (widget.order['totalCartValue']?.toString() ?? '0') : (widget.order['expectedPrice']?.toString() ?? '0');
+      final couponTotal = _isDigistall ? (widget.order['coupontotal']?.toString()) : null;
 
-      // Fallback logic for riderId
-      String riderId = widget.order['riderId'] ?? widget.order['rider_id'] ?? '';
-      if (riderId == null || riderId.isEmpty) {
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          riderId = prefs.getString('riderId') ?? '';
-          print('Fetched riderId from SharedPreferences: $riderId');
-        } catch (e) {
-          print('Error fetching riderId from SharedPreferences: $e');
-        }
+      String riderId = widget.order['riderId']?.toString() ?? widget.order['rider_id']?.toString() ?? '';
+      if (riderId.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        riderId = prefs.getString('riderId') ?? '';
       }
-      print('Navigating to TripCompletePage with riderId: $riderId');
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -201,205 +177,102 @@ class _TripFlowPageState extends State<TripFlowPage> {
             totalAmount: amount,
             riderId: riderId,
             couponTotal: couponTotal,
+            orderShortId: o.shortId,
+            customerName: o.isStore ? null : o.customerName,
+            cashAmount: o.isCod ? o.codAmount : 0,
+            earning: o.fare,
           ),
         ),
       );
       return;
     }
 
-    TripStage? nextStage;
-    switch (currentStage) {
-      case TripStage.reachPickup:
-        // Skip readyToStart and go directly to inProgress
-        nextStage = TripStage.inProgress;
-        break;
-      case TripStage.readyToStart:
-        // This stage is now merged with reachPickup, but handle it for backward compatibility
-        nextStage = TripStage.inProgress;
-        break;
-      case TripStage.inProgress:
-        // Already handled above - trip completion
-        break;
-      case null:
-        debugPrint("Current stage is null");
-        break;
-    }
+    // reachPickup (and the legacy readyToStart) both continue to inProgress.
+    setState(() {
+      _otp = '';
+      _cashCollected = false;
+    });
+    await tripProvider.updateTripStage(TripStage.inProgress);
+  }
 
-    if (nextStage != null) {
-      await tripProvider.updateTripStage(nextStage);
-    }
+  Future<void> _openSos() {
+    final l10n = context.l10n;
+    return showCapSheet<void>(
+      context,
+      borderColor: context.cap.rd,
+      builder: (ctx) {
+        final p = ctx.cap;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SheetHeader(label: l10n.cEmergencyAssistance, title: l10n.cSafetySos, color: p.rd),
+            Text(l10n.cSosDesc, style: CapText.sans(size: 14, color: p.mu, height: 1.45)),
+            const SizedBox(height: 18),
+            CapButton(label: l10n.cCall112, icon: CapIcons.phone, style: CapButtonStyle.danger, onPressed: () => launchUrl(Uri.parse('tel:112'))),
+            const SizedBox(height: 10),
+            CapButton(
+              label: l10n.cShareLocation,
+              icon: CapIcons.nav,
+              style: CapButtonStyle.ghost,
+              onPressed: () async {
+                String link = 'https://rider.digistall.in';
+                try {
+                  final pos = await Geolocator.getCurrentPosition();
+                  link = 'https://maps.google.com/?q=${pos.latitude},${pos.longitude}';
+                } catch (_) {}
+                await launchUrl(Uri.parse('sms:?body=${Uri.encodeComponent(l10n.cEmergencyShareText(link))}'));
+                if (ctx.mounted) Navigator.of(ctx).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
     return Consumer<TripProvider>(
       builder: (context, tripProvider, child) {
-        final currentStage = tripProvider.currentStage ?? TripStage.reachPickup;
-
-        return AnnotatedRegion<SystemUiOverlayStyle>(
-          value: SystemUiOverlayStyle(
-            statusBarIconBrightness: Brightness.light,
-            statusBarColor: Common.secondary,
-          ),
-          child: GestureDetector(
-            onTap: () => {FocusManager.instance.primaryFocus?.unfocus()},
-            child: Scaffold(
-              appBar: AppBar(
-                backgroundColor: Common.secondary,
-                toolbarHeight: 60,
-                leading: Padding(
-                  padding: const EdgeInsets.only(left: 8.0),
-                  child: Container(
-                    child: Center(
-                      child: SvgPicture.asset(
-                        'assets/Icons/truck.svg',
-                        color: Common.primary,
-                        width: 25,
-                        height: 25,
-                      ),
-                    ),
+        final stage = tripProvider.currentStage ?? TripStage.reachPickup;
+        final p = context.cap;
+        return GestureDetector(
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          child: Scaffold(
+            backgroundColor: p.bg,
+            resizeToAvoidBottomInset: false,
+            body: Stack(
+              children: [
+                const Positioned.fill(child: CityMap(showHighDemand: false)),
+                Positioned(
+                  left: 18,
+                  right: 18,
+                  top: media.padding.top + 16,
+                  child: Row(
+                    children: [
+                      CapChip.back(context, label: context.l10n.cNavHome),
+                      const Spacer(),
+                      CapChip(icon: CapIcons.pin, label: context.l10n.cViewRoute, onTap: () => openRoute(context, widget.order)),
+                    ],
                   ),
                 ),
-                actions: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 15.0),
-                    child: Image.asset(
-                      'assets/Icons/refresh.png',
-                      width: 20,
-                      height: 20,
-                    ),
-                  ),
-                ],
-                title: Text(
-                  _getAppBarTitle(currentStage),
-                  style: TextStyle(
-                    fontSize: Common.title,
-                    fontFamily: Common.family,
-                  ),
-                ),
-              ),
-
-              body: SafeArea(
-                child: Column(
-                  children: [
-                    Expanded(
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 16 + media.padding.bottom + media.viewInsets.bottom,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: media.size.height - media.padding.top - media.viewInsets.bottom - 90),
+                    child: Glass(
+                      radius: CapRadius.sheet,
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildLocationCard(order: widget.order, endpointPost: widget.endpointPost),
-                            // _buildContactCard(order: widget.order, endpointPost: widget.endpointPost,), // Hidden: Order ID card
-                            
-                            // Combined: Show navigation for both reachPickup and inProgress stages
-                            if (currentStage == TripStage.reachPickup ||
-                                currentStage == TripStage.inProgress)
-                              _buildGoogleMapsButton(
-                                order: widget.order,
-                                stage: currentStage,
-                              ),
-                            
-                            // Customer OTP to start a ride/parcel trip
-                            if (currentStage == TripStage.reachPickup && !_isDigistall)
-                              _buildOtpField(_otpController, context.l10n.enterCustomerOtp),
-
-                            // Digistall delivery OTP to mark the order delivered
-                            if (currentStage == TripStage.inProgress && _isDigistall)
-                              _buildOtpField(_deliveryOtpController, context.l10n.enterDeliveryOtp),
-                            const SizedBox(height: 12),
-                          ],
-                        ),
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+                        child: _buildSheet(stage),
                       ),
                     ),
-
-                    /// --- Bottom Persistent Buttons ---
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        left: 12,
-                        right: 12,
-                        bottom: 20,
-                      ),
-                      child: Column(
-                        children: [
-                          // Original conditional display
-                          // Customer can be called before pickup and while delivering
-                          if (widget.order['sellerPhone']?.toString().isNotEmpty ?? false)
-                            _buildCallCard(order: widget.order),
-                          const SizedBox(height: 6),
-                          _isLoading
-                              ? Container(
-                                height: 45,
-                                decoration: BoxDecoration(
-                                  color: Common.secondary,
-                                  borderRadius: BorderRadius.circular(30),
-                                ),
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Common.primary,
-                                      strokeWidth: 2.5,
-                                    ),
-                                  ),
-                                ),
-                              )
-                              : Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                child: SlideAction(
-                                  sliderButtonIconPadding: 5,
-                                  sliderButtonIconSize: 20,
-                                  sliderButtonYOffset: 14,
-                                  onSubmit: () async {
-                                    // Check for OTP in the first stage (reachPickup) for non-digiorder requests
-                                    if (currentStage == TripStage.reachPickup &&
-                                        !_isDigistall &&
-                                        _otpController.text.trim().isEmpty) {
-                                      getSnackBar(context, context.l10n.pleaseEnterCustomerOtp, Colors.orange, 2,);
-                                      return;
-                                    }
-                                    if (currentStage == TripStage.inProgress &&
-                                        _needsDeliveryOtp &&
-                                        _deliveryOtpController.text.trim().isEmpty) {
-                                      getSnackBar(context, context.l10n.pleaseEnterDeliveryOtp, Colors.orange, 2,);
-                                      return;
-                                    }
-                                    Future.delayed(
-                                      const Duration(milliseconds: 10),
-                                      () {
-                                        setState(() => _isLoading = true);
-                                        _nextStage();
-                                      },
-                                    );
-                                  },
-                                  height: 45,
-                                  sliderRotate: false,
-                                  innerColor: Common.primary,
-                                  outerColor: Common.secondary,
-                                  elevation: 5,
-                                  borderRadius: 30,
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    _getBottomActionText(currentStage),
-                                    style: TextStyle(
-                                      fontSize: Common.h2,
-                                      fontWeight: Common.weight,
-                                      color: Common.primary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         );
@@ -407,1017 +280,134 @@ class _TripFlowPageState extends State<TripFlowPage> {
     );
   }
 
-  Widget _buildOtpField(TextEditingController controller, String hint) {
+  Widget _buildSheet(TripStage stage) {
+    final p = context.cap;
+    final l10n = context.l10n;
+    final o = _o;
+    final started = stage == TripStage.inProgress;
+    final target = started ? o.dropAddress : o.pickupAddress;
+    final sub = [
+      if (o.customerName != null && !o.isStore) o.customerName!,
+      if (o.isStore && (widget.order['productName']?.toString().isNotEmpty ?? false))
+        l10n.productLabel(widget.order['productName'].toString()),
+      o.isCod ? l10n.cCodShort('${o.codAmount}') : o.payLabel(l10n),
+    ].join(' · ');
+    final needsOtp = _needsOtp(stage);
+    final collectCash = started && _isDigistall && o.isCod && o.codAmount > 0;
+
+    String buttonLabel() {
+      if (!started) return o.isRide ? l10n.cVerifyStartRide : l10n.cVerifyStartDelivery;
+      if (collectCash) return l10n.cConfirmCompleteDelivery('${o.codAmount}');
+      return l10n.cVerifyCompleteDelivery;
+    }
+
+    String slideLabel() {
+      if (!started) return l10n.cSlidePickedUp;
+      return o.isRide ? l10n.cSlideEndRide : l10n.cSlideToDeliver;
+    }
+
     return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(height: 8),
-        Card(
-          elevation: 4,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Theme(
-              data: Theme.of(context).copyWith(
-                textSelectionTheme: TextSelectionThemeData(
-                  cursorColor: Common.secondary,
-                  selectionColor: Common.secondary.withOpacity(0.3),
-                  selectionHandleColor: Common.secondary,
-                ),
-              ),
-              child: TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                style: TextStyle(
-                  color: Common.secondary,
-                  fontFamily: 'bold',
-                  fontWeight: Common.weight,
-                  fontSize: Common.h2,
-                ),
-                decoration: InputDecoration(
-                  border: InputBorder.none,
-                  hintText: hint,
-                  hintStyle: TextStyle(
-                    color: Colors.grey,
-                    fontFamily: 'bold',
-                    fontWeight: Common.weight,
-                    fontSize: Common.h2,
-                  ),
-                ),
-              ),
-            ),
-          ),
+        const GrabHandle(),
+        Row(
+          children: [
+            Flexible(child: CapTag(tripStageLabel(l10n, o, started), leading: const LiveDot())),
+            const Spacer(),
+            Text('#${o.shortId}', style: CapText.mono(size: 12, weight: FontWeight.w400, color: p.mu)),
+          ],
         ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(target.isEmpty ? l10n.notAvailable : target, maxLines: 3, overflow: TextOverflow.ellipsis, style: CapText.serif(size: 24, color: p.tx, height: 1.1)),
+                  const SizedBox(height: 4),
+                  Text(sub, style: CapText.sans(size: 13, color: p.mu)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (o.phone != null) ...[
+              IconBox(icon: CapIcons.phone, iconSize: 18, tooltip: l10n.callCustomer, onTap: () => callCustomer(context, widget.order)),
+              const SizedBox(width: 8),
+            ],
+            IconBox(
+              icon: CapIcons.nav,
+              iconSize: 18,
+              tooltip: started ? l10n.navigateToDestination : l10n.navigateToPickup,
+              onTap: () => openNavigation(context, widget.order, toPickup: !started),
+            ),
+            if (started) ...[
+              const SizedBox(width: 8),
+              IconBox(icon: CapIcons.sos, iconSize: 18, color: p.rd, background: p.rd.withValues(alpha: 0.15), tooltip: 'SOS', onTap: _openSos),
+            ],
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (o.isCod)
+          CodBanner(
+            title: l10n.cCollectCash('${o.codAmount}'),
+            subtitle: l10n.cCodOrder,
+            trailing: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                KLabel(l10n.cYouEarn, size: 10, padding: EdgeInsets.zero),
+                Text(rupees(o.fare), style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.amx)),
+              ],
+            ),
+          )
+        else
+          PrepaidStrip(l10n.cPrepaidNoCash),
+        const SizedBox(height: 14),
+        RouteTimeline(pickup: o.pickupAddress, drop: o.dropAddress, ellipsis: false, pickupLabel: o.isStore ? l10n.storeLocation : null),
+        const SizedBox(height: 14),
+        if (needsOtp) ...[
+          KLabel(started ? l10n.cAskDeliveryOtp : (o.isRide ? l10n.cAskRideOtp : l10n.cAskParcelOtp), padding: const EdgeInsets.only(bottom: 8)),
+          OtpBoxes(key: ValueKey('otp-$stage'), onChanged: (v) => _otp = v, shakeTick: _shakeTick),
+          if (collectCash) ...[const SizedBox(height: 12), _cashCheck(o)],
+          const SizedBox(height: 10),
+          Text(l10n.cVerifyCodeHint, style: CapText.sans(size: 12, color: p.mu)),
+          const SizedBox(height: 14),
+          CapButton(label: buttonLabel(), loading: _isLoading, onPressed: () => _submit(stage)),
+        ] else ...[
+          if (collectCash) ...[_cashCheck(o), const SizedBox(height: 14)],
+          SlideToAct(label: slideLabel(), loading: _isLoading, onAction: () => _submit(stage)),
+        ],
       ],
     );
   }
 
-  String _getBottomActionText(TripStage stage) {
-    switch (stage) {
-      case TripStage.reachPickup:
-        return context.l10n.startTrip;  // Combined: pickup + start
-      case TripStage.readyToStart:
-        return context.l10n.startTrip;  // Backward compatibility
-      case TripStage.inProgress:
-        return context.l10n.completeTrip;
-    }
-  }
-
-  String _getAppBarTitle(TripStage stage) {
-    switch (stage) {
-      case TripStage.reachPickup:
-        return context.l10n.tripDetails;  // Combined: pickup arrival + trip details
-      case TripStage.readyToStart:
-        return context.l10n.tripDetails;  // Backward compatibility
-      case TripStage.inProgress:
-        return context.l10n.tripInProgress;
-    }
-  }
-}
-
-class _buildCallCard extends StatelessWidget {
-  final Map<String, dynamic> order;
-  const _buildCallCard({super.key, required this.order});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () async {
-        final phone = order['sellerPhone']?.toString().trim();
-
-        if (phone == null || phone.isEmpty) {
-          getSnackBar(
-            context,
-            context.l10n.customerPhoneMissing,
-            Colors.orange,
-            2,
-          );
-          return;
-        }
-
-        final url = Uri.parse('tel:$phone');
-
-        if (await canLaunchUrl(url)) {
-          await launchUrl(url);
-        } else {
-          getSnackBar(
-            context,
-            context.l10n.couldNotLaunchDialer,
-            Colors.orange,
-            2,
-          );
-        }
-      },
-      child: Card(
-        color: Colors.transparent,
-        elevation: 5,
-        child: Container(
-          height: 45,
-          width: double.infinity,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Common.secondary,
-            borderRadius: BorderRadius.circular(30),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                'assets/Icons/call.png',
-                width: 15,
-                height: 15,
-                color: Color(0xFFFFFFFF),
-              ),
-              SizedBox(width: 30),
-              Text(
-                context.l10n.callCustomer,
-                style: TextStyle(
-                  fontWeight: Common.weight,
-                  fontSize: Common.h2,
-                  color: Common.primary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _buildGoogleMapsButton extends StatelessWidget {
-  final Map<String, dynamic> order;
-  final TripStage stage;
-  const _buildGoogleMapsButton({
-    super.key,
-    required this.order,
-    required this.stage,
-  });
-
-  String _getLaunchMapText(BuildContext context, TripStage stage) {
-    switch (stage) {
-      case TripStage.reachPickup:
-        return context.l10n.navigateToPickup;
-      case TripStage.inProgress:
-        return context.l10n.navigateToDestination;
-      default:
-        return context.l10n.tripCompleted;
-    }
-  }
-
-  /// Navigation target for the current stage: coordinates when the order has them
-  /// (Digistall store/customer), otherwise the address text.
-  String? _navigationTarget() {
-    final toPickup = stage == TripStage.reachPickup;
-    final lat = order[toPickup ? 'sellerLat' : 'customerLat'];
-    final lng = order[toPickup ? 'sellerLng' : 'customerLng'];
-    if (lat != null && lng != null) return '$lat,$lng';
-
-    final address = toPickup
-        ? (order['pickupAddress'] ?? order['sellerAddress'])
-        : (order['deliveryAddress'] ?? order['address']);
-    final text = address?.toString().trim();
-    return (text == null || text.isEmpty) ? null : text;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () async {
-        try {
-          final target = _navigationTarget();
-
-          if (target == null) {
-            getSnackBar(
-              context,
-              stage == TripStage.reachPickup
-                  ? context.l10n.pickupAddressMissing
-                  : context.l10n.destinationAddressMissing,
-              Colors.orange,
-              2,
-            );
-            return;
-          }
-
-          final encodedTarget = Uri.encodeComponent(target);
-          final navigationUrl = Uri.parse("google.navigation:q=$encodedTarget&mode=d");
-          if (await canLaunchUrl(navigationUrl)) {
-            await launchUrl(navigationUrl, mode: LaunchMode.externalApplication);
-            return;
-          }
-
-          // Google Maps app not installed: open directions in the browser instead.
-          await launchUrl(
-            Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$encodedTarget&travelmode=driving"),
-            mode: LaunchMode.externalApplication,
-          );
-        } catch (e) {
-          getSnackBar(context, context.l10n.somethingWentWrong, Colors.orange, 2);
-        }
-      },
-      child: Card(
-        elevation: 5,
-        child: Container(
-          height: 45,
-          width: double.infinity,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Common.secondary,
-            borderRadius: BorderRadius.circular(5),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                _getLaunchMapText(context, stage),
-                style: TextStyle(
-                  fontWeight: Common.weight,
-                  fontSize: Common.h2,
-                  color: Common.primary,
-                ),
-              ),
-              SizedBox(width: 20),
-              SvgPicture.asset(
-                'assets/Icons/location.svg',
-                width: 20,
-                height: 20,
-                color: Color(0xFFFFFFFF),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _buildContactCard extends StatelessWidget {
-  final Map<String, dynamic> order;
-  final String endpointPost;
-  const _buildContactCard({super.key, required this.order, required this.endpointPost});
-
-  String getFormattedDeliveryTime(BuildContext context, Map<String, dynamic> order) {
-    final deliveryBy = order['deliveryBy'];
-    final deliveryTime = order['deliveryTime'];
-
-    if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
-      return context.l10n.deliveryTimeNotSet;
-    }
-
-    try {
-      final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
-      return DateFormat('dd MMM yyyy, hh:mm a').format(parsed); // Ex: 04 Jul 2025, 12:00 PM
-    } catch (e) {
-      return context.l10n.invalidDeliveryTime;
-    }
-  }
-
-  String formatIndianDate(BuildContext context, String input) {
-    try {
-      // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return context.l10n.invalidDate;
-      final parsed = DateTime.tryParse(input);
-      if (parsed == null) return context.l10n.invalidDate;
-
-      // Convert to local time if needed (optional)
-      final localTime = parsed.toLocal();
-
-      // Create a date formatter with the desired pattern
-      final formatter = DateFormat('dd MMM yyyy, hh:mm a');
-
-      // Format the date
-      return formatter.format(localTime);
-    } catch (e) {
-      debugPrint('Date formatting error: $e');
-      return context.l10n.invalidDate;
-    }
-  }
-
-  int _getCartValue() {
-    final value = order['totalCartValue'];
-    if (value is int) return value;
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
-  }
-
-  static const int commission = 20;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDigistall = endpointPost == 'api/digiorder/setorderStatus';
-    final cartValue = _getCartValue();
-    final total = cartValue + commission;
-    return Card(
-      elevation: 5,
+  Widget _cashCheck(CapOrder o) {
+    final p = context.cap;
+    final l10n = context.l10n;
+    final on = _cashCollected;
+    final color = on ? CapPalette.prepaid : CapPalette.cod;
+    return GestureDetector(
+      onTap: () => setState(() => _cashCollected = !on),
       child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: Common.primary,
-          borderRadius: BorderRadius.circular(16),
+          color: color.withValues(alpha: on ? 0.12 : 0.15),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: on ? color.withValues(alpha: 0.4) : color, width: 1.5),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // if(endpointPost=='api/parcel/setriderstatus')
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Text(
-                    context.l10n.orderId,
-                    style: TextStyle(
-                      fontSize: Common.h2,
-                      fontWeight: Common.weight2,
-                      color: Common.secondary,
-                      fontFamily: 'bold',
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-                SizedBox(width: 10,),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      '#${order['_id']?.toString() ?? ''}',
-                      // '${getFormattedDeliveryTime(context, order)}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: Common.weight2,
-                        color: Common.light,
-                        fontFamily: 'bold',
-                      ),
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-
-            Divider(color: Common.light, thickness: 0.3,),
-            SizedBox(height: 5),
-            // Divider(),
-            // SizedBox(height: 6),
-
-            if(endpointPost!='api/digiorder/setorderStatus')...[
-              Row(
+            SizedBox(width: 22, height: 22, child: Checkbox(value: on, onChanged: (v) => setState(() => _cashCollected = v ?? false))),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    context.l10n.name,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(width: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        (order['sellerName']?.toString().isNotEmpty ?? false)
-                            ? order['sellerName']
-                            : context.l10n.notAvailable,
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Common.light,
-                            fontFamily: 'bold'
-                        ),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ),
+                  Text(on ? l10n.cCashCollectedCheck('${o.codAmount}') : l10n.cCollectCashFrom('${o.codAmount}'),
+                      style: CapText.sans(size: 13, weight: FontWeight.w700, color: color)),
+                  Text(on ? l10n.cCashConfirmed : l10n.cTapWhenCash, style: CapText.sans(size: 11.5, color: p.mu)),
                 ],
-              ),
-              SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.phoneNo,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(height: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        (order['sellerPhone']?.toString().isNotEmpty ?? false)
-                            ? order['sellerPhone']
-                            : context.l10n.notAvailable,
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Common.light,
-                            fontFamily: 'bold'
-                        ),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 6,),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.distance,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(height: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        order['distance']?? context.l10n.unknown,
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Common.light,
-                            fontFamily: 'bold'
-                        ),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            if(endpointPost=='api/rider/setriderstatus')...[
-              SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.vehicleType,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(height: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        (order['vehicleType']?? context.l10n.unknown),
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Common.light,
-                            fontFamily: 'bold'
-                        ),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.numberOfPassengers,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(height: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        textAlign: TextAlign.end,
-                        (order['numOfPassengers']?? context.l10n.unknown),
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Common.light,
-                            fontFamily: 'bold'
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            if(endpointPost=='api/parcel/setriderstatus')...[
-              SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.parcelMessage,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(width: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        order['message']?? context.l10n.nil,
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Common.light,
-                            fontFamily: 'bold'
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.parcelWeight,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(height: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        (order['weight']?? context.l10n.unknown),
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Common.light,
-                            fontFamily: 'bold'
-                        ),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-            SizedBox(height: 6),
-            // Show cart value + commission for Digistall Orders
-            if (endpointPost == 'api/digiorder/setorderStatus') ...[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.cartValue,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(height: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        '₹${order['totalCartValue']} + ₹20 commission',
-                        style: TextStyle(
-                            fontWeight: Common.weight2,
-                            fontSize: Common.h2,
-                            color: Colors.green,
-                            fontFamily: 'bold'
-                        ),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    context.l10n.total,
-                    style: TextStyle(
-                        fontWeight: Common.weight2,
-                        fontSize: Common.h2,
-                        color: Common.secondary,
-                        fontFamily: 'bold'
-                    ),
-                  ),
-                  SizedBox(height: 10,),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Text(
-                        '₹${order['totalCartValue'] + 20}',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: Common.h2,
-                            color: Colors.blue[800],
-                            fontFamily: 'bold'
-                        ),
-                        textAlign: TextAlign.end,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 6),
-            ],
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  endpointPost=='api/digiorder/setorderStatus'?
-                      context.l10n.totalValue:
-                  context.l10n.total,
-                  style: TextStyle(
-                      fontWeight: Common.weight2,
-                      fontSize: Common.h2,
-                      color: Common.secondary,
-                      fontFamily: 'bold'
-                  ),
-                ),
-                SizedBox(height: 10,),
-                Expanded(
-                  child: Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: Text(
-                      endpointPost=='api/digiorder/setorderStatus'?
-                      '${order['totalCartValue'].toString()} Rs.': '${order['expectedPrice']?? context.l10n.unknown} Rs.',
-                      style: TextStyle(
-                          fontWeight: Common.weight2,
-                          fontSize: Common.h2,
-                          color: Common.light,
-                          fontFamily: 'bold'
-                      ),
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  endpointPost=='api/digiorder/setorderStatus'?
-                      context.l10n.deliverBy:
-                  context.l10n.pickupTime,
-                  style: TextStyle(
-                      fontWeight: Common.weight2,
-                      fontSize: Common.h2,
-                      color: Common.secondary,
-                      fontFamily: 'bold'
-                  ),
-                ),
-                SizedBox(height: 10,),
-                Expanded(
-                  child: Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    child: Text(
-                      endpointPost=='api/digiorder/setorderStatus'?
-                      getFormattedDeliveryTime(context, order):
-                      formatIndianDate(context, order['pickupTime']?.toString() ?? ''),
-                      style: TextStyle(
-                          fontWeight: Common.weight2,
-                          fontSize: Common.h2,
-                          color: Common.light,
-                          fontFamily: 'bold'
-                      ),
-                      textAlign: TextAlign.end,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _buildLocationCard extends StatefulWidget {
-  final Map<String, dynamic> order;
-  final String endpointPost;
-  const _buildLocationCard({super.key, required this.order, required this.endpointPost});
-
-  @override
-  State<_buildLocationCard> createState() => _buildLocationCardState();
-}
-
-class _buildLocationCardState extends State<_buildLocationCard> {
-  String? _currentLocationText; // null while the location is being fetched
-  Position? _currentPosition;
-  bool _isLoadingLocation = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _getCurrentLocation();
-  }
-
-  // Get rider's current location
-  Future<void> _getCurrentLocation() async {
-    try {
-      // Check location permission
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          setState(() {
-            _currentLocationText = context.l10n.locationDenied;
-            _isLoadingLocation = false;
-          });
-          return;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        setState(() {
-          _currentLocationText = context.l10n.locationDeniedForever;
-          _isLoadingLocation = false;
-        });
-        return;
-      }
-
-      // Get current position
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      
-      setState(() {
-        _currentPosition = position;
-      });
-
-      // Convert coordinates to address
-      await _getAddressFromCoordinates(position.latitude, position.longitude);
-      
-    } catch (e) {
-      setState(() {
-        _currentLocationText = context.l10n.unableToGetLocation;
-        _isLoadingLocation = false;
-      });
-      print('Error getting location: $e');
-    }
-  }
-
-  // Convert coordinates to readable address
-  Future<void> _getAddressFromCoordinates(double latitude, double longitude) async {
-    try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(latitude, longitude);
-      if (placemarks.isNotEmpty) {
-        Placemark place = placemarks[0];
-        String address = '';
-        
-        if (place.street != null && place.street!.isNotEmpty) {
-          address += place.street!;
-        }
-        if (place.subLocality != null && place.subLocality!.isNotEmpty) {
-          address += address.isNotEmpty ? ', ${place.subLocality!}' : place.subLocality!;
-        }
-        if (place.locality != null && place.locality!.isNotEmpty) {
-          address += address.isNotEmpty ? ', ${place.locality!}' : place.locality!;
-        }
-        if (place.administrativeArea != null && place.administrativeArea!.isNotEmpty) {
-          address += address.isNotEmpty ? ', ${place.administrativeArea!}' : place.administrativeArea!;
-        }
-        
-        setState(() {
-          _currentLocationText = address.isNotEmpty ? address : context.l10n.currentLocationFound;
-          _isLoadingLocation = false;
-        });
-      } else {
-        setState(() {
-          _currentLocationText = context.l10n.locationCoordinates('$latitude', '$longitude');
-          _isLoadingLocation = false;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _currentLocationText = context.l10n.locationCoordinates('$latitude', '$longitude');
-        _isLoadingLocation = false;
-      });
-      print('Error getting address: $e');
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 5,
-      child: Container(
-        padding: EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Common.primary,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          children: [
-            // RIDER CURRENT LOCATION
-            Row(
-              children: [
-                SvgPicture.asset(
-                  'assets/Icons/location.svg',
-                  width: 24,
-                  height: 24,
-                  color: Color(0xFF4CAF50), // Green for current location
-                ),
-                SizedBox(width: 16),
-                Text(
-                  context.l10n.yourLocation,
-                  style: TextStyle(
-                    fontSize: Common.h2,
-                    fontWeight: Common.weight2,
-                    fontFamily: 'bold',
-                    color: Common.secondary,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 6),
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 24,
-                    child: Center(
-                      child: Container(width: 1, color: Common.secondary),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _currentLocationText ?? context.l10n.gettingLocation,
-                              style: TextStyle(
-                                fontSize: Common.h2,
-                                fontWeight: Common.weight,
-                                color: Common.light,
-                              ),
-                              softWrap: true,
-                            ),
-                          ),
-                          if (_isLoadingLocation)
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Common.secondary,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                ],
-              ),
-            ),
-            SizedBox(height: 12),
-            
-            // PICKUP LOCATION
-            Row(
-              children: [
-                SvgPicture.asset(
-                  'assets/Icons/location.svg',
-                  width: 24,
-                  height: 24,
-                  color: Color(0xFF58DE71),
-                ),
-                SizedBox(width: 16),
-                Text(
-                  context.l10n.pickup,
-                  style: TextStyle(
-                    fontSize: Common.h2,
-                    fontWeight: Common.weight,
-                    fontFamily: 'bold',
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 6),
-            IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start, // ensures vertical stretch
-                children: [
-                  Container(
-                    width: 24,
-                    child: Center(
-                      child: Container(width: 1, color: Common.secondary),
-                    ),
-                  ),
-                  const SizedBox(width: 16), // optional spacing
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: Text(
-                        widget.endpointPost=='api/digiorder/setorderStatus'?
-                            widget.order['sellerAddress']?? context.l10n.notAvailable:
-                        widget.order['pickupAddress']?? context.l10n.notAvailable,
-                        style: TextStyle(
-                          fontSize: Common.h2,
-                          fontWeight: Common.weight,
-                          color: Common.light,
-                        ),
-                        softWrap: true,
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                ],
-              ),
-            ),
-            SizedBox(height: 6),
-            Row(
-              children: [
-                SvgPicture.asset(
-                  'assets/Icons/location.svg',
-                  width: 24,
-                  height: 24,
-                  color: Color(0xFFED9D60),
-                ),
-                SizedBox(width: 16),
-                Text(
-                  context.l10n.drop,
-                  style: TextStyle(
-                    fontSize: Common.h2,
-                    fontWeight: Common.weight,
-                    fontFamily: 'bold',
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.only(left: 40.0, right: 8),
-              child: Text(
-                widget.endpointPost=='api/digiorder/setorderStatus'?
-                    widget.order['address']?? context.l10n.notAvailable :
-                (widget.order['deliveryAddress']?.toString().isNotEmpty ?? false)
-                    ? widget.order['deliveryAddress']
-                    : context.l10n.notAvailable,
-                style: TextStyle(
-                  fontSize: Common.h2,
-                  fontWeight: Common.weight,
-                  color: Common.light,
-                ),
-                softWrap: true,
               ),
             ),
           ],
@@ -1428,7 +418,7 @@ class _buildLocationCardState extends State<_buildLocationCard> {
 }
 
 class _SuccessOverlay extends StatefulWidget {
-  const _SuccessOverlay({super.key});
+  const _SuccessOverlay();
 
   @override
   State<_SuccessOverlay> createState() => _SuccessOverlayState();
@@ -1438,28 +428,16 @@ class _SuccessOverlayState extends State<_SuccessOverlay> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(Duration(seconds: 2), () {
-      Navigator.of(context).pop(); // auto-close after 2 seconds
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) Navigator.of(context).pop();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarIconBrightness: Brightness.dark,
-        statusBarColor: Common.background,
-      ),
-      child: Scaffold(
-        // backgroundColor: Colors.black.withOpacity(0.8),
-        body: Center(
-          child: SizedBox(
-            height: 200,
-            width: 200,
-            child: Lottie.asset('assets/animation/success.json'),
-          ),
-        ),
-      ),
+    return Scaffold(
+      backgroundColor: context.cap.bg,
+      body: Center(child: SizedBox(height: 200, width: 200, child: Lottie.asset('assets/animation/success.json'))),
     );
   }
 }

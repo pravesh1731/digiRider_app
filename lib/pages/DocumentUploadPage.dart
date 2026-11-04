@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:digirider/pages/LandingPage.dart';
-import 'package:digirider/settings/SettingsPage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:digirider/global/Common.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
@@ -13,10 +11,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../NavMain.dart';
 import '../global/l10n.dart';
 import '../services/notification_service.dart';
+import '../services/rider_feed.dart';
+import '../ui/widgets.dart';
+import 'auth_widgets.dart';
 import '../utils/bottomSnackBar.dart';
 
 class DocumentUploadPage extends StatefulWidget {
-  const DocumentUploadPage({super.key});
+  /// Opened from Profile → Documents to replace files: back just closes the page.
+  final bool fromProfile;
+  const DocumentUploadPage({super.key, this.fromProfile = false});
 
   @override
   State<DocumentUploadPage> createState() => _DocumentUploadPageState();
@@ -108,11 +111,14 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
 
         getSnackBar(context, l10n.loginSuccessful, Colors.green, 0);
 
+        if (widget.fromProfile) {
+          await RiderFeed.instance.loadProfile();
+          if (mounted) Navigator.of(context).pop();
+          return;
+        }
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (context) => NavMain(initialIndex: 1),
-          ),
+          MaterialPageRoute(builder: (context) => const NavMain()),
           (route) => false,
         );
       } else {
@@ -136,193 +142,90 @@ class _DocumentUploadPageState extends State<DocumentUploadPage> {
 
 
 
-  Widget _buildUploadField(String label, String field) {
-    final file = _files[field];
-
-    return InkWell(
-      onTap: () => _pickFile(field),
-      child: Container(
-        height: 50,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          border: Border.all(color: Common.secondary, width: 1.5),
-          borderRadius: BorderRadius.circular(10),
-          color: Colors.white,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Text(
-                file != null ? context.l10n.uploadedFile(file.path.split('/').last) : label,
-                style: TextStyle(
-                  fontFamily: 'bold',
-                  fontSize: Common.h2,
-                  color: Common.secondary,
-                ),
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
-              ),
-            ),
-            Icon(file != null ? Icons.check_circle : Icons.upload, color: file != null ? Colors.green : Common.secondary),
-          ],
-        ),
-      ),
+  void _backToLanding() {
+    if (widget.fromProfile) {
+      Navigator.of(context).pop();
+      return;
+    }
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LandingPage()),
+      (route) => false,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => LandingPage()), // or LandingPage
-              (route) => false,
-        );
-        return false; // prevent default back behavior
+    final l10n = context.l10n;
+    final p = context.cap;
+    // licence and qrcode are required by api/rider/adv; aadhaar and profile are optional.
+    final docs = [
+      ('licence', l10n.cLicence, l10n.cLicenceDesc, true),
+      ('qrcode', l10n.cPaymentQr, l10n.cQrDesc, true),
+      ('aadhaar', l10n.cAadhaar, l10n.cAadhaarDesc, false),
+      ('profile', l10n.cProfilePhoto, l10n.cPhotoDesc, false),
+    ];
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _backToLanding();
       },
-      child: Scaffold(
-        backgroundColor: Common.secondary,
-        appBar: AppBar(
-          elevation: 0,
-          toolbarHeight: 0,
-          backgroundColor: Common.background,
-        ),
-        body: SafeArea(
-          child: Stack(
+      child: CapAuthScaffold(
+        step: widget.fromProfile ? null : 4,
+        stepLabel: l10n.cVerificationLbl,
+        title: l10n.cUploadDocsTitle,
+        onBack: _backToLanding,
+        children: [
+          Text(l10n.cUploadDocsDesc, style: CapText.sans(size: 14, color: p.mu, height: 1.5)),
+          const SizedBox(height: 16),
+          CapList(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black,
-                      Common.background
+              for (final (field, name, desc, required) in docs)
+                CapListItem(
+                  onTap: () => _pickFile(field),
+                  leading: IconBox(
+                    icon: _files[field] != null ? CapIcons.chk : CapIcons.up,
+                    color: _files[field] != null ? p.lv : p.tx,
+                  ),
+                  trailing: CapChip(label: _files[field] != null ? l10n.cChange : l10n.cUploadBtn, background: p.s1, onTap: () => _pickFile(field)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(name, style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx)),
+                          CapTag(
+                            _files[field] != null ? l10n.cUploadedTag : (required ? l10n.cRequiredTag : l10n.cOptionalTag),
+                            size: 10.5,
+                            color: _files[field] != null ? p.lv : (required ? p.rd : p.mu),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _files[field] != null ? _files[field]!.path.split('/').last : desc,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CapText.sans(size: 12, color: p.mu),
+                      ),
                     ],
                   ),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                  child: Center(
-                    child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(vertical: 60),
-                    child: Card(
-                      elevation: 4,
-                      color: Common.primary,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              context.l10n.uploadYourDocuments,
-                              style: TextStyle(
-                                fontFamily: 'bold',
-                                fontSize: 20,
-                                fontWeight: Common.weight,
-                                color: Common.secondary,
-                              ),
-                            ),
-                            SizedBox(height: 20),
-                            _buildUploadField(context.l10n.uploadLicense, 'licence'),
-                            SizedBox(height: 15),
-                            _buildUploadField(context.l10n.uploadQrCode, 'qrcode'),
-                            SizedBox(height: 15),
-                            _buildUploadField(context.l10n.uploadAadhaar, 'aadhaar'),
-                            SizedBox(height: 15),
-                            _buildUploadField(context.l10n.uploadProfilePhoto, 'profile'),
-                            SizedBox(height: 20),
-                            InkWell(
-                              onTap: _isLoading ? null : _onNextStep,
-                              child: Container(
-                                width: double.infinity,
-                                height: 50,
-                                decoration: BoxDecoration(
-                                  color: Common.secondary,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Center(
-                                  child: _isLoading?
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        SizedBox(
-                                          height: 20,
-                                          width: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.5,
-                                            valueColor: AlwaysStoppedAnimation<Color>(Common.primary),
-                                          ),
-                                        ),
-                                      ],
-                                    ): Text(
-                                    context.l10n.upload,
-                                    style: TextStyle(
-                                      fontFamily: 'bold',
-                                      fontSize: Common.h2,
-                                      fontWeight: Common.weight2,
-                                      color: Common.primary,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 15),
-                            Container(
-                              padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: Color(0xFFF4F2F2),
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: Text(
-                                context.l10n.documentsHint,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontFamily: 'bold',
-                                  fontSize: Common.h4,
-                                  fontWeight: Common.weight,
-                                  color: Common.light,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 16,
-                left: 16,
-                child: InkWell(
-                  onTap: () {
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (_) => LandingPage()), // or LandingPage
-                          (route) => false,
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(30),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Common.secondary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(Icons.arrow_back, color: Common.primary, size: 20),
-                  ),
-                ),
-              ),
             ],
           ),
-        ),
+          const SizedBox(height: 20),
+          CapButton(
+            label: l10n.cSubmitForReview,
+            trailingIcon: CapIcons.arr,
+            loading: _isLoading,
+            onPressed: _isLoading ? null : _onNextStep,
+          ),
+          const SizedBox(height: 18),
+          Text(l10n.documentsHint, textAlign: TextAlign.center, style: CapText.sans(size: 12, color: p.mu, height: 1.5)),
+        ],
       ),
     );
   }

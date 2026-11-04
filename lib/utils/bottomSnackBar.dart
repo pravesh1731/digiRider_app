@@ -1,32 +1,10 @@
 import 'package:flutter/material.dart';
-import '../global/Common.dart';
+import '../ui/widgets.dart';
 
+/// Shows [message] as the website's glass toast. [status]: 0 = success, 1 = error, anything else = info.
+/// The callers' raw colours (green/orange/red) only tint the text for errors.
 void getSnackBar(BuildContext context, String message, Color color, int status) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Row(
-        children: [
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: Common.primary, fontWeight: FontWeight.w500, fontFamily: 'bold', fontSize: Common.h3),
-              softWrap: true,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Container(
-            child: Icon(status==0 ? Icons.check_circle : status==1 ? Icons.cancel : Icons.info, color: Colors.white, size: 18,),
-          )
-        ],
-      ),
-      backgroundColor: color,
-      behavior: SnackBarBehavior.floating,
-      elevation: 6,
-      margin: EdgeInsets.fromLTRB(20, 0, 20, 20),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      duration: Duration(seconds: 2),
-    ),
-  );
+  final p = context.cap;
+  final isError = status == 1 || color == Colors.red || color == Colors.redAccent;
+  showCapToast(context, message, color: isError ? p.rd : null, duration: const Duration(milliseconds: 2400));
 }

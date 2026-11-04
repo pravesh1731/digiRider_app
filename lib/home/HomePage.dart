@@ -1,1241 +1,498 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_svg/svg.dart';
-import 'package:intl/intl.dart';
-import 'package:lottie/lottie.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shimmer/shimmer.dart';
-import '../global/Common.dart';
+
+import '../NavMain.dart';
+import '../gen_l10n/app_localizations.dart';
 import '../global/l10n.dart';
-import '../providers/trip_provider.dart';
-import '../services/active_orders.dart';
-import '../utils/show_exit_dialog.dart';
+import '../model/cap_order.dart';
+import '../services/rider_feed.dart';
+import '../settings/sub_pages.dart';
+import '../ui/cap_visuals.dart';
+import '../ui/order_actions.dart';
+import '../ui/pickers.dart';
+import '../ui/widgets.dart';
 import 'TripFlowPage.dart';
 
+/// The website's Home cockpit: live city map, greeting, online switch, today's earnings,
+/// and a bottom sheet showing (in order) offline notice, active trip, the next request, or "all caught up".
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final ValueChanged<int> onSelectTab;
+  const HomePage({super.key, required this.onSelectTab});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  late String vehicleType;
-  late String cityName;
-  late String email;
-  List<dynamic> _orders = [];
-  // Removed selectedStatus and category logic
-  bool _isLoading = true;
-  String endpointPost = '';
-  Timer? _timer;
-  final ScrollController _scrollController = ScrollController();
+  static const int _goal = 1500;
+  int _requestIndex = 0;
+  int _activeIndex = 0;
 
-  void filterRidesAuto() async {
-    final filtered = await _fetchAllBookings();
-    if (!mounted) return;
-    final hasNewOrders = filtered.length > _orders.length;
-    setState(() {
-      _orders = _sortOrdersByLatest(filtered);
-    });
-    // Only jump to the top when a new order shows up, not on every poll.
-    if (hasNewOrders) _scrollToTop();
+  RiderFeed get feed => RiderFeed.instance;
+
+  String _greeting() {
+    final l10n = context.l10n;
+    final hour = DateTime.now().hour;
+    if (hour < 12) return l10n.cGoodMorning;
+    if (hour < 17) return l10n.cGoodAfternoon;
+    return l10n.cGoodEvening;
   }
 
-  void filterRides() async {
-    final filtered = await _fetchAllBookings();
-    if (!mounted) return;
-    setState(() {
-      _orders = _sortOrdersByLatest(filtered);
-      _isLoading = false;
-    });
-    _scrollToTop();
+  Future<void> _toggleOnline() async {
+    final value = !feed.online;
+    await feed.setOnline(value);
+    if (mounted) showCapToast(context, value ? context.l10n.cNowOnline : context.l10n.cNowOffline);
   }
 
-  List<dynamic> _sortOrdersByLatest(List<dynamic> orders) {
-    orders.sort((a, b) {
-      final aTime = DateTime.tryParse(a['pickupTime'] ?? a['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-      final bTime = DateTime.tryParse(b['pickupTime'] ?? b['createdAt'] ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
-      return bTime.compareTo(aTime);
-    });
-    return orders;
-  }
-
-  Future<List<dynamic>> _fetchAllBookings() async {
-    await _loadSharedPrefs();
-    final orders = await ActiveOrders.fetch(email);
-    if (mounted) {
-      // Keep the accept limit in sync with what the server says is still active.
-      await Provider.of<TripProvider>(context, listen: false).setActiveOrdersCount(orders.length);
-    }
-    return orders;
-  }
-
-  Future<void> _loadSharedPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    vehicleType = prefs.getString('vehicleType') ?? '';
-    cityName = prefs.getString('cityName') ?? '';
-    email = prefs.getString('email') ?? '';
-  }
-
-  void _scrollToTop() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(0);
-      }
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchAllBookings().then((orders) {
-      if (!mounted) return;
-      setState(() {
-        _orders = _sortOrdersByLatest(orders);
-        _isLoading = false;
-      });
-      _scrollToTop();
-    });
-    _timer = Timer.periodic(Duration(seconds: 5), (timer) {
-      filterRidesAuto();
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel(); // Cancel timer when widget is disposed
-    _scrollController.dispose();
-    super.dispose();
+  void _skip(Map<String, dynamic> order, {required bool expired}) {
+    feed.markMissed(order);
+    setState(() => _requestIndex++);
+    showCapToast(context, expired ? context.l10n.cExpiredToast : context.l10n.cSkippedToast);
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () => showExitConfirmationDialog(context),
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: Common.secondary,
-          toolbarHeight: 60,
-          leading: Padding(
-            padding: const EdgeInsets.only(left: 8.0),
-            child: Container(
-              child: Center(
-                child: SvgPicture.asset(
-                  'assets/Icons/home1.svg',
-                  color: Common.primary,
-                  width: 25,
-                  height: 25,
-                ),
-              ),
+    final media = MediaQuery.of(context);
+    return ListenableBuilder(
+      listenable: feed,
+      builder: (context, _) {
+        final p = context.cap;
+        final cityIndex = kCities.indexOf(feed.city).clamp(0, kCities.length - 1);
+        return Stack(
+          children: [
+            Positioned.fill(child: CityMap(cityOffset: cityIndex, showHighDemand: feed.online)),
+            Positioned(
+              left: 18,
+              right: 18,
+              top: media.padding.top + 16,
+              child: _buildTop(p),
             ),
-          ),
-          actions: [
-            GestureDetector(
-              onTap:
-                  () async => {
-                    setState(() {
-                      _isLoading = true;
-                    }),
-                    filterRides(),
-                  },
-              child: Padding(
-                padding: const EdgeInsets.only(right: 15.0),
-                child: Image.asset(
-                  'assets/Icons/refresh.png',
-                  width: 20,
-                  height: 20,
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 84 + media.padding.bottom,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: media.size.height - media.padding.top - media.padding.bottom - 330),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  switchInCurve: const Cubic(.2, .8, .2, 1),
+                  transitionBuilder: (child, anim) => FadeTransition(
+                    opacity: anim,
+                    child: SlideTransition(position: Tween(begin: const Offset(0, 0.12), end: Offset.zero).animate(anim), child: child),
+                  ),
+                  child: _buildSheet(p),
                 ),
               ),
             ),
           ],
-          title: Text(
-            context.l10n.home,
-            style: TextStyle(fontSize: Common.title, fontFamily: Common.family,color: Common.primary),
-          ),
-        ),
-        body: Container(
-          child: Padding(
-            padding: const EdgeInsets.only(right: 12.0, left: 12.0, top: 8),
-            child: Column(
-              children: [
-                // Removed category filter buttons
-                Expanded(
-                  child:
-                      _isLoading
-                          ? ListView.builder(
-                            itemCount: 3,
-                            itemBuilder: (_, __) => const OrderCardShimmer(),
-                          )
-                          : _orders.isEmpty
-                          ? Center(
-                            child: SizedBox(
-                              height: 220,
-                              width: double.infinity,
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Lottie.asset(
-                                    'assets/animation/empty2.json',
-                                    height: 200,
-                                  ),
-                                  Positioned(
-                                    bottom: 30,
-                                    child: Text(
-                                      context.l10n.nothingHereYet,
-                                      style: TextStyle(
-                                        fontSize: Common.h2,
-                                        color: Colors.grey,
-                                        fontWeight: Common.weight,
-                                        fontFamily: 'bold',
-                                      ),
-                                      softWrap: true,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          )
-                          : RefreshIndicator(
-                            backgroundColor: Common.secondary,
-                            color: Common.primary,
-                            elevation: 2,
-                            onRefresh: () async {
-                              setState(() {
-                                _isLoading = true;
-                              });
-                              filterRides();
-                            },
-                            child: ListView.builder(
-                              controller: _scrollController,
-                              itemCount: _orders.length + 1,
-                              itemBuilder: (context, index) {
-                                if (index == _orders.length)
-                                  return const SizedBox(height: 8);
-                                final order = _orders[index];
-                                if (order['orderType'] == 'Digistall Orders') {
-                                  return _DigistallOrderCard(
-                                    order: order,
-                                    endpointPost: order['endpointPost'] ?? '',
-                                  );
-                                } else if (order['orderType'] == 'Rider Orders' || order['orderType'] == 'Parcel Orders') {
-                                  return _OrderCard(
-                                    order: order,
-                                    endpointPost: order['endpointPost'] ?? '',
-                                  );
-                                } else {
-                                  return SizedBox.shrink();
-                                }
-                              },
-                            ),
-                          ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Removed buildStatusFilterButton
-}
-
-class _DigistallOrderCard extends StatelessWidget {
-  // const _DigistallOrderCard({
-  //   super.key,
-  // });
-  final Map<String, dynamic> order;
-  final String endpointPost;
-  // Commission is derived from coupontotal (String) - totalCartValue (int)
-
-  const _DigistallOrderCard({
-    Key? key,
-    required this.order,
-    required this.endpointPost,
-  }) : super(key: key);
-
-  int _getCartValue() {
-    final value = order['totalCartValue'];
-    if (value is int) return value;
-    if (value is String) return int.tryParse(value) ?? 0;
-    return 0;
-  }
-
-  String _getCouponTotal() {
-    final couponTotal = order['coupontotal'];
-    if (couponTotal is String) return couponTotal;
-    if (couponTotal is int) return couponTotal.toString();
-    // Fallbacks similar to IncomingBookingPage
-    final expectedPrice = order['expectedPrice'];
-    if (expectedPrice is int) return expectedPrice.toString();
-    if (expectedPrice is String) return expectedPrice;
-    final adminCommission = order['adminCommission'];
-    final cart = _getCartValue();
-    if (adminCommission is int) return (cart + adminCommission).toString();
-    if (adminCommission is String) {
-      final admin = int.tryParse(adminCommission) ?? 0;
-      return (cart + admin).toString();
-    }
-    return cart.toString();
-  }
-
-  String formatIndianDate(BuildContext context, String input) {
-    try {
-      // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return context.l10n.invalidDate;
-      final parsed = DateTime.tryParse(input);
-      if (parsed == null) return context.l10n.invalidDate;
-
-      // Convert to local time if needed (optional)
-      final localTime = parsed.toLocal();
-
-      // Create a date formatter with the desired pattern
-      final formatter = DateFormat('dd MMM yyyy, hh:mm a');
-
-      // Format the date
-      return formatter.format(localTime);
-    } catch (e) {
-      debugPrint('Date formatting error: $e');
-      return context.l10n.invalidDate;
-    }
-  }
-
-  String getFormattedDeliveryTime(BuildContext context, Map<String, dynamic> order) {
-    final deliveryBy = order['deliveryBy'];
-    final deliveryTime = order['deliveryTime'];
-
-    if (deliveryBy == null || deliveryTime == null || deliveryBy.isEmpty || deliveryTime.isEmpty) {
-      return context.l10n.deliveryTimeNotSet;
-    }
-
-    try {
-      final parsed = DateFormat('yyyy-MM-dd HH:mm').parse('$deliveryBy $deliveryTime');
-      return DateFormat('dd MMM yyyy, hh:mm a').format(parsed); // Ex: 04 Jul 2025, 12:00 PM
-    } catch (e) {
-      return context.l10n.invalidDeliveryTime;
-    }
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    final cartValue = _getCartValue();
-    final couponTotalStr = _getCouponTotal();
-    int commission = 0;
-    try {
-      commission = int.parse(couponTotalStr) - cartValue;
-    } catch (_) {
-      commission = 0;
-    }
-    final total = cartValue + commission;
-    return Consumer<TripProvider>(
-      builder: (context, tripProvider, child) {
-        return Card(
-          elevation: 5,
-          child: Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Common.primary,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 12.0),
-                      child: OrderTypeIcon(orderType: 'Digistall Orders'),
-                    ),
-                    // if(endpointPost=='api/parcel/setriderstatus')
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: Text(
-                        context.l10n.orderNumber(order['_id']?.toString().substring(0, 8) ?? ''),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: Common.weight2,
-                          color: Common.light,
-                          fontFamily: 'bold',
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: Text(
-                          '${getFormattedDeliveryTime(context, order)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: Common.weight2,
-                            color: Common.secondary,
-                            fontFamily: 'bold',
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-
-
-                Divider(color: Common.light, thickness: 0.09,),
-                SizedBox(height: 5),
-
-                // SizedBox(height: 16),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Align(
-                        alignment: Alignment.topLeft,
-                        child: Text(
-                          context.l10n.productLabel(order['productName']?.toString() ?? context.l10n.unknown),
-                          style: TextStyle(
-                            fontSize: Common.h2,
-                            fontWeight: Common.weight2,
-                            color: Common.secondary,
-                            fontFamily: 'bold',
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ),
-                    ),
-
-                    Expanded(
-                      flex: 1,
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: Text(
-                          context.l10n.quantityLabel(order['productCount']?.toString() ?? context.l10n.unknown),
-                          style: TextStyle(
-                            fontSize: Common.h2,
-                            fontWeight: Common.weight2,
-                            color: Common.secondary,
-                            fontFamily: 'bold',
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 16),
-
-                Row(
-                  children: [
-                    SvgPicture.asset(
-                      'assets/Icons/location.svg',
-                      width: 24,
-                      height: 24,
-                      color: Color(0xFF58DE71),
-                    ),
-                    SizedBox(width: 16),
-                    Text(
-                      context.l10n.pickup,
-                      style: TextStyle(
-                        fontSize: Common.h2,
-                        fontWeight: Common.weight2,
-                        fontFamily: 'bold',
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 2),
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start, // ensures vertical stretch
-                    children: [
-                      Container(
-                        width: 24,
-                        child: Center(
-                          child: Container(width: 1, color: Common.secondary),
-                        ),
-                      ),
-                      const SizedBox(width: 16), // optional spacing
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 12.0),
-                          child: Text(
-                            // (order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
-                            (order['sellerAddress'] ?? context.l10n.pickupNA).toString(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: Common.weight,
-                              color: Common.light,
-                            ),
-                            softWrap: true,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 2),
-                Row(
-                  children: [
-                    SvgPicture.asset(
-                      'assets/Icons/location.svg',
-                      width: 24,
-                      height: 24,
-                      color: Color(0xFFED9D60),
-                    ),
-                    SizedBox(width: 16),
-                    Text(
-                      context.l10n.drop,
-                      style: TextStyle(
-                        fontSize: Common.h2,
-                        fontWeight: Common.weight2,
-                        fontFamily: 'bold',
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 2),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 40.0, right: 8),
-                    child: Text(
-                      // order['deliveryAddress'] ?? context.l10n.dropNA,
-                      order['address'] ?? context.l10n.dropNA,
-                      style: TextStyle(
-                        fontSize: Common.h3,
-                        fontWeight: Common.weight,
-                        color: Common.light,
-                      ),
-                      softWrap: true,
-                    ),
-                  ),
-                ),
-                SizedBox(height: 12,),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(width: 5),
-
-                    // Cart Value Section
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            context.l10n.cartValue,
-                            style: TextStyle(
-                              fontSize: Common.h3,
-                              fontWeight: Common.weight2,
-                              color: Common.secondary,
-                              fontFamily: 'bold'
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          // Show cart value + commission = coupon total
-                          Text(
-                            '₹$cartValue + ₹$commission = ₹$couponTotalStr',
-                            style: TextStyle(
-                              fontSize: Common.h2,
-                              fontWeight: Common.weight,
-                              color: Colors.green,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            context.l10n.totalAmountValue('$total'),
-                            style: TextStyle(
-                              fontSize: Common.h3,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue[800],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // View Details / Progress Button
-                    Expanded(
-                      flex: 3,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: FutureBuilder<bool>(
-                          future: tripProvider.hasTripProgress(
-                            "trip_${order['_id']}",
-                          ),
-                          builder: (context, snapshot) {
-                            final bool showProgress = snapshot.data == true ||
-                                order['riderStatus']?.toString().toLowerCase() == 'in transit';
-
-                            return ElevatedButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                      (context) => TripFlowPage(
-                                        tripId: "trip_${order['_id']}",
-                                        order: order,
-                                        endpointPost: endpointPost,
-                                      ),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    showProgress
-                                        ? Colors.black
-                                        : const Color(0xFF008BE1),
-                                foregroundColor: Common.primary,
-                                elevation: 4,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                minimumSize: const Size(10, 38),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      showProgress
-                                          ? context.l10n.progress
-                                          : context.l10n.viewDetails,
-                                      style: TextStyle(
-                                        fontSize: Common.h4,
-                                        fontWeight: Common.weight,
-                                        fontFamily: 'bold',
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  showProgress
-                                      ? Container(
-                                        height: 24,
-                                        width: 24,
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                        child:
-                                            SpinningLottie(), // your animation widget
-                                      )
-                                      : SvgPicture.asset(
-                                        'assets/Icons/view_detail_arrow.svg',
-                                        color: Colors.white,
-                                        height: 20,
-                                        width: 20,
-                                      ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
         );
       },
     );
   }
-}
 
-class _OrderCard extends StatelessWidget {
-  // const _OrderCard({
-  //   super.key,
-  // });
-  final Map<String, dynamic> order;
-  final String endpointPost;
-
-  const _OrderCard({Key? key, required this.order, required this.endpointPost})
-    : super(key: key);
-  String formatIndianDate(BuildContext context, String input) {
-    try {
-      // Parse the input string to DateTime
-      if (input == null || input.isEmpty) return context.l10n.invalidDate;
-      final parsed = DateTime.tryParse(input);
-      if (parsed == null) return context.l10n.invalidDate;
-
-      // Convert to local time if needed (optional)
-      final localTime = parsed.toLocal();
-
-      // Create a date formatter with the desired pattern
-      final formatter = DateFormat('dd MMM yyyy, hh:mm a');
-
-      // Format the date
-      return formatter.format(localTime);
-    } catch (e) {
-      debugPrint('Date formatting error: $e');
-      return context.l10n.invalidDate;
-    }
-  }
-
-  String _getOrderType(String endpointPost) {
-    if (endpointPost == 'api/rider/setriderstatus') return 'Rider Orders';
-    if (endpointPost == 'api/parcel/setriderstatus') return 'Parcel Orders';
-    if (endpointPost == 'api/digiorder/setorderStatus') return 'Digistall Orders';
-    return '';
-  }
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<TripProvider>(
-      builder: (context, tripProvider, child) {
-        return Card(
-          elevation: 5,
-          child: Container(
-            padding: EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Common.primary,
-              borderRadius: BorderRadius.circular(16),
+  Widget _buildTop(CapPalette p) {
+    final l10n = context.l10n;
+    final hasDot = feed.active.isNotEmpty || (feed.online && feed.openOrders.isNotEmpty);
+    final percent = (feed.todayEarnings / _goal * 100).round().clamp(0, 100);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            CapAvatar(name: feed.name.isEmpty ? l10n.cBrand : feed.name),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(_greeting(), style: CapText.sans(size: 13, color: p.mu)),
+                  Text(
+                    feed.name.isEmpty ? l10n.cBrand : feed.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: CapText.sans(size: 20, weight: FontWeight.w700, color: p.tx, spacing: -0.4),
+                  ),
+                ],
+              ),
             ),
-            child: Column(
+            Stack(
+              clipBehavior: Clip.none,
               children: [
-                Row(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 12.0),
-                      child: OrderTypeIcon(orderType: _getOrderType(endpointPost)),
-                    ),
-                    // if(endpointPost=='api/parcel/setriderstatus')
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: Text(
-                        context.l10n.orderNumber(order['_id']?.toString().substring(0, 8) ?? ''),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: Common.weight2,
-                          color: Common.light,
-                          fontFamily: 'bold',
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: Text(
-                          formatIndianDate(context, order['pickupTime']?.toString() ?? ''),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: Common.weight2,
-                            color: Common.secondary,
-                            fontFamily: 'bold',
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                
-                Divider(color: Common.light, thickness: 0.09,),
-                SizedBox(height: 5),
-
-                // SizedBox(height: 16),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        children: [
-                          Align(
-                            alignment: Alignment.topLeft,
-                            child: Text(
-                              context.l10n.name,
-                              style: TextStyle(
-                                fontSize: Common.h2,
-                                fontWeight: Common.weight2,
-                                color: Common.secondary,
-                                fontFamily: 'bold',
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
-                          ),
-                          SizedBox(height: 2,),
-
-                          Align(
-                            alignment: Alignment.topLeft,
-                            child: Text(
-                              '${order['sellerName'] ?? context.l10n.unknown}',
-                              style: TextStyle(
-                                fontSize: Common.h2,
-                                fontWeight: Common.weight2,
-                                color: Common.light,
-                                fontFamily: 'bold',
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        children: [
-                          Align(
-                            alignment: Alignment.topLeft,
-                            child: Text(
-                              context.l10n.contact,
-                              style: TextStyle(
-                                fontSize: Common.h2,
-                                fontWeight: Common.weight2,
-                                color: Common.secondary,
-                                fontFamily: 'bold',
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
-                          ),
-                          SizedBox(height: 2,),
-                          Align(
-                            alignment: Alignment.topLeft,
-                            child: Text(
-                              '${order['sellerPhone']?.toString() ?? context.l10n.unknown}',
-                              style: TextStyle(
-                                fontSize: Common.h2,
-                                fontWeight: Common.weight2,
-                                color: Common.light,
-                                fontFamily: 'bold',
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 16),
-                Row(
-                  children: [
-                    SvgPicture.asset(
-                      'assets/Icons/location.svg',
-                      width: 24,
-                      height: 24,
-                      color: Color(0xFF58DE71),
-                    ),
-                    SizedBox(width: 16),
-                    Text(
-                      context.l10n.pickup,
-                      style: TextStyle(
-                        fontSize: Common.h2,
-                        fontWeight: Common.weight2,
-                        fontFamily: 'bold',
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 2),
-                IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start, // ensures vertical stretch
-                    children: [
-                      Container(
-                        width: 24,
-                        child: Center(
-                          child: Container(width: 1, color: Common.secondary),
-                        ),
-                      ),
-                      const SizedBox(width: 16), // optional spacing
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 12.0),
-                          child: Text(
-                            (order['pickupAddress'] ?? context.l10n.pickupNA).toString(),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: Common.weight,
-                              color: Common.light,
-                            ),
-                            softWrap: true,
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 8),
-                    ],
+                Glass(
+                  radius: 14,
+                  blur: 12,
+                  shadow: false,
+                  child: IconBox(
+                    icon: CapIcons.bell,
+                    background: Colors.transparent,
+                    tooltip: l10n.cAlerts,
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AlertsPage())),
                   ),
                 ),
-                SizedBox(height: 2),
-                Row(
-                  children: [
-                    SvgPicture.asset(
-                      'assets/Icons/location.svg',
-                      width: 24,
-                      height: 24,
-                      color: Color(0xFFED9D60),
-                    ),
-                    SizedBox(width: 16),
-                    Text(
-                      context.l10n.drop,
-                      style: TextStyle(
-                        fontSize: Common.h2,
-                        fontWeight: Common.weight2,
-                        fontFamily: 'bold',
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 2),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 40.0, right: 8),
-                    child: Text(
-                      order['deliveryAddress'] ?? context.l10n.dropNA,
-                      style: TextStyle(
-                        fontSize: Common.h3,
-                        fontWeight: Common.weight,
-                        color: Common.light,
-                      ),
-                      softWrap: true,
+                if (hasDot)
+                  Positioned(
+                    top: 9,
+                    right: 10,
+                    child: IgnorePointer(
+                      child: Container(width: 8, height: 8, decoration: BoxDecoration(color: p.rd, shape: BoxShape.circle)),
                     ),
                   ),
-                ),
-                SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          SizedBox(width: 5),
-                          Text(
-                            context.l10n.tripDistance,
-                            style: TextStyle(
-                              fontSize: Common.h3,
-                              fontWeight: Common.weight2,
-                              color: Common.secondary,
-                              fontFamily: 'bold'
-                            ),
-                          ),
-                          SizedBox(width: 10),
-                          Container(color: Common.light, height: 1, width: 10),
-                          SizedBox(width: 10),
-                          Text(
-                            order['distance'] ?? context.l10n.distanceNA,
-                            style: TextStyle(
-                              fontSize: Common.h2,
-                              fontWeight: Common.weight,
-                              color: Common.light,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(width: 5),
-
-                    // Cart Value Section
-                    Expanded(
-                      flex: 2,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            context.l10n.total,
-                            style: TextStyle(
-                              fontSize: Common.h3,
-                              fontWeight: Common.weight2,
-                              color: Common.secondary,
-                              fontFamily: 'bold',
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '₹ ${order['expectedPrice'] ?? '0'}',
-                            style: TextStyle(
-                              fontSize: Common.h2,
-                              fontWeight: Common.weight,
-                              color: Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // View Details / Progress Button
-                    Expanded(
-                      flex: 3,
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: FutureBuilder<bool>(
-                          future: tripProvider.hasTripProgress(
-                            "trip_${order['_id']}",
-                          ),
-                          builder: (context, snapshot) {
-                            final bool showProgress = snapshot.data == true ||
-                                order['riderStatus']?.toString().toLowerCase() == 'in transit';
-
-                            return ElevatedButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder:
-                                        (context) => TripFlowPage(
-                                          tripId: "trip_${order['_id']}",
-                                          order: order,
-                                          endpointPost: endpointPost,
-                                        ),
-                                  ),
-                                );
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    showProgress
-                                        ? Colors.black
-                                        : const Color(0xFF008BE1),
-                                foregroundColor: Common.primary,
-                                elevation: 4,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
-                                minimumSize: const Size(10, 38),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      showProgress
-                                          ? context.l10n.progress
-                                          : context.l10n.viewDetails,
-                                      style: TextStyle(
-                                        fontSize: Common.h4,
-                                        fontWeight: Common.weight,
-                                        fontFamily: 'bold',
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  showProgress
-                                      ? Container(
-                                        height: 24,
-                                        width: 24,
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(
-                                            12,
-                                          ),
-                                        ),
-                                        child:
-                                            SpinningLottie(), // your animation widget
-                                      )
-                                      : SvgPicture.asset(
-                                        'assets/Icons/view_detail_arrow.svg',
-                                        color: Colors.white,
-                                        height: 20,
-                                        width: 20,
-                                      ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class OrderCardShimmer extends StatelessWidget {
-  const OrderCardShimmer({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      color: Common.primary,
-      elevation: 5,
-      child: Shimmer.fromColors(
-        highlightColor: Colors.grey.shade300,
-        baseColor: Common.primary,
-        // baseColor: Common.secondary,
-        // highlightColor: Common.primary,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            CapChip(
+              icon: CapIcons.pin,
+              label: l10n.cityName(feed.city),
+              trailingIcon: CapIcons.chev,
+              onTap: () => showCityPicker(context),
+            ),
+            const Spacer(),
+            Glass(
+              radius: 99,
+              blur: 12,
+              shadow: false,
+              padding: const EdgeInsets.fromLTRB(14, 5, 8, 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  LiveDot(color: feed.online ? p.lv : p.mu, animate: feed.online),
+                  const SizedBox(width: 8),
+                  Text(feed.online ? l10n.cOnline : l10n.cOffline, style: CapText.sans(size: 13, weight: FontWeight.w600, color: p.tx)),
+                  const SizedBox(width: 8),
+                  CapSwitch(value: feed.online, semanticLabel: l10n.cOnline, onChanged: (_) => _toggleOnline()),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Glass(
+          radius: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          child: Row(
             children: [
-              Align(
-                alignment: Alignment.topRight,
-                child: Container(
-                  width: 100,
-                  height: 10,
-                  color: Common.secondary,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    KLabel(l10n.cTodaysEarnings),
+                    Text(rupees(feed.todayEarnings), style: CapText.serif(size: 46, color: p.tx, height: 1)),
+                    const SizedBox(height: 2),
+                    Text(
+                      l10n.cTripsGoal('${feed.todayTrips}', rupees(_goal).substring(1)),
+                      style: CapText.sans(size: 13, color: p.mu),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Container(width: 24, height: 24, color: Common.secondary),
-                  const SizedBox(width: 16),
-                  Container(width: 60, height: 10, color: Common.secondary),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                height: 10,
-                color: Common.secondary,
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                height: 10,
-                color: Common.secondary,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Container(width: 24, height: 24, color: Common.secondary),
-                  const SizedBox(width: 16),
-                  Container(width: 60, height: 10, color: Common.secondary),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                height: 10,
-                color: Common.secondary,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Container(height: 10, color: Common.secondary),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Container(height: 10, color: Common.secondary),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Container(width: 60, height: 24, color: Common.secondary),
-                  const SizedBox(width: 16),
-                  Container(width: 60, height: 24, color: Common.secondary),
-                ],
-              ),
+              EarnRing(percent: percent),
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _sheet(CapPalette p, {required Key key, required List<Widget> children, Widget? topBar}) {
+    return Glass(
+      key: key,
+      radius: CapRadius.sheet,
+      child: Stack(
+        children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [const GrabHandle(), ...children],
+            ),
+          ),
+          if (topBar != null) Positioned(left: 20, right: 20, top: 0, child: topBar),
+        ],
       ),
     );
   }
-}
 
-class SpinningLottie extends StatefulWidget {
-  @override
-  _SpinningLottieState createState() => _SpinningLottieState();
-}
+  Widget _buildSheet(CapPalette p) {
+    final l10n = context.l10n;
+    if (!feed.online) {
+      return _sheet(p, key: const ValueKey('offline'), children: [
+        Text(l10n.cOfflineTitle, style: CapText.serif(size: 32, color: p.tx)),
+        const SizedBox(height: 6),
+        Text(l10n.cOfflineDesc(l10n.cityName(feed.city)), style: CapText.sans(size: 14, color: p.mu)),
+        const SizedBox(height: 16),
+        CapButton(label: l10n.cGoOnline, icon: CapIcons.bolt, onPressed: _toggleOnline),
+      ]);
+    }
 
-class _SpinningLottieState extends State<SpinningLottie>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+    if (feed.active.isNotEmpty) {
+      final order = feed.active[_activeIndex % feed.active.length];
+      return _ActiveTripSheet(
+        key: ValueKey('active-${order['_id']}'),
+        order: order,
+        index: _activeIndex % feed.active.length,
+        count: feed.active.length,
+        onNext: () => setState(() => _activeIndex++),
+        wrap: (children) => _sheet(p, key: ValueKey('active-sheet-${order['_id']}'), children: children),
+      );
+    }
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: 1000),
-    )..repeat();
+    final open = feed.openOrders;
+    if (open.isNotEmpty) {
+      final i = _requestIndex % open.length;
+      final order = open[i];
+      return _sheet(
+        p,
+        key: ValueKey('req-${order['_id']}'),
+        topBar: _Countdown(key: ValueKey('cd-${order['_id']}'), onDone: () => _skip(order, expired: true)),
+        children: [_RequestContent(order: order, index: i, count: open.length, onSkip: () => _skip(order, expired: false))],
+      );
+    }
+
+    return _sheet(p, key: const ValueKey('empty'), children: [
+      Text(l10n.cAllCaughtUp, style: CapText.serif(size: 32, color: p.tx)),
+      const SizedBox(height: 6),
+      Text(l10n.cAllCaughtUpDesc(l10n.cityName(feed.city)), style: CapText.sans(size: 14, color: p.mu, height: 1.45)),
+      const SizedBox(height: 12),
+      CapButton(label: l10n.cBrowseOrders, style: CapButtonStyle.ghost, onPressed: () => widget.onSelectTab(NavMain.orders)),
+    ]);
   }
+}
+
+/// `.cd`: amber bar that shrinks over 25 s; the request then moves to Missed.
+class _Countdown extends StatefulWidget {
+  final VoidCallback onDone;
+  const _Countdown({super.key, required this.onDone});
+
+  @override
+  State<_Countdown> createState() => _CountdownState();
+}
+
+class _CountdownState extends State<_Countdown> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(seconds: 25))
+    ..addStatusListener((s) {
+      if (s == AnimationStatus.completed) widget.onDone();
+    })
+    ..forward();
 
   @override
   void dispose() {
-    _controller.dispose();
+    _c.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Lottie.asset(
-      'assets/animation/progress.json',
-      controller: _controller,
+    final p = context.cap;
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) => Align(
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: 1 - _c.value,
+          child: Container(
+            height: 3,
+            decoration: BoxDecoration(color: p.am, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(4))),
+          ),
+        ),
+      ),
     );
   }
 }
 
-// Widget to show the correct icon for Rider, Parcel, or Digistall order
-class OrderTypeIcon extends StatelessWidget {
-  final String orderType;
-  const OrderTypeIcon({Key? key, required this.orderType}) : super(key: key);
+/// A new request: type tag, customer, pickup → drop, distance/deliver-by, pay tag, fare, Skip + slide to accept.
+class _RequestContent extends StatefulWidget {
+  final Map<String, dynamic> order;
+  final int index;
+  final int count;
+  final VoidCallback onSkip;
+
+  const _RequestContent({required this.order, required this.index, required this.count, required this.onSkip});
+
+  @override
+  State<_RequestContent> createState() => _RequestContentState();
+}
+
+class _RequestContentState extends State<_RequestContent> {
+  bool _accepting = false;
+
+  Future<void> _accept() async {
+    setState(() => _accepting = true);
+    await acceptOrderWithFeedback(context, widget.order);
+    if (mounted) setState(() => _accepting = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    switch (orderType) {
-      case 'Rider Orders':
-        return SvgPicture.asset('assets/Icons/bike-svgrepo-com.svg', width: 28, height: 28, color: Color(0xFF008BE1));
-      case 'Parcel Orders':
-        return Image.asset('assets/Icons/activity.png', width: 28, height: 28, color: Color(0xFF58DE71));
-      case 'Digistall Orders':
-        return SvgPicture.asset('assets/Icons/store-svgrepo-com.svg', width: 28, height: 28, color: Colors.green);
-      default:
-        return Icon(Icons.local_shipping, size: 28);
-    }
+    final p = context.cap;
+    final l10n = context.l10n;
+    final o = CapOrder(widget.order);
+    final hasDistance = o.distance != null && !o.isStore;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Flexible(child: CapTag(o.kindLabel(l10n), leading: const LiveDot())),
+            const Spacer(),
+            Text('#${o.shortId} · ${widget.index + 1}/${widget.count}', style: CapText.mono(size: 12, weight: FontWeight.w400, color: p.mu)),
+          ],
+        ),
+        if (o.customerName != null && !o.isStore) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              CapAvatar(name: o.customerName!, size: 30),
+              const SizedBox(width: 8),
+              Flexible(child: Text(o.customerName!, maxLines: 1, overflow: TextOverflow.ellipsis, style: CapText.sans(size: 14, weight: FontWeight.w700, color: p.tx))),
+            ],
+          ),
+        ],
+        const SizedBox(height: 14),
+        RouteTimeline(pickup: o.pickupAddress, drop: o.dropAddress, pickupLabel: o.isStore ? l10n.storeLocation : null),
+        const SizedBox(height: 14),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  KLabel(hasDistance ? l10n.cDistance : l10n.cDeliverBy),
+                  Text(
+                    hasDistance ? o.distance! : (o.whenLabel() ?? l10n.cToday),
+                    style: CapText.sans(size: 14, weight: FontWeight.w600, color: p.tx),
+                  ),
+                  const SizedBox(height: 6),
+                  o.isCod
+                      ? CapTag(l10n.cCodCollect('${o.codAmount}'), color: CapPalette.cod, background: CapPalette.cod.withValues(alpha: 0.15))
+                      : CapTag(o.payLabel(l10n)),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                KLabel(l10n.cYouEarn),
+                Text(rupees(o.fare), style: CapText.serif(size: 38, color: p.amx, height: 1)),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: [
+            CapChip(
+              label: l10n.cSkip,
+              height: 60,
+              radius: 20,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              onTap: _accepting ? null : widget.onSkip,
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: SlideToAct(label: l10n.cSlideToAccept, loading: _accepting, onAction: _accept)),
+          ],
+        ),
+      ],
+    );
   }
 }
 
-// Future<bool> _hasTripProgress(String tripId) async {
-//   final prefs = await SharedPreferences.getInstance();
-//   final index = prefs.getInt('trip_stage_$tripId');
-//   return index != null && index != TripStage.reachPickup.index;
-// }
+/// The rider's accepted order on Home: stage, destination, call/navigate, cash info, and a button into the trip.
+class _ActiveTripSheet extends StatelessWidget {
+  final Map<String, dynamic> order;
+  final int index;
+  final int count;
+  final VoidCallback onNext;
+  final Widget Function(List<Widget> children) wrap;
+
+  const _ActiveTripSheet({super.key, required this.order, required this.index, required this.count, required this.onNext, required this.wrap});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.cap;
+    final l10n = context.l10n;
+    final o = CapOrder(order);
+    final started = o.riderStatus.toLowerCase() == 'in transit';
+    final stage = tripStageLabel(l10n, o, started);
+    final target = started ? o.dropAddress : o.pickupAddress;
+    final sub = [
+      if (o.customerName != null && !o.isStore) o.customerName!,
+      o.isCod ? l10n.cCodShort('${o.codAmount}') : o.payLabel(l10n),
+    ].join(' · ');
+
+    return wrap([
+      Row(
+        children: [
+          Flexible(child: CapTag(stage, leading: const LiveDot())),
+          const Spacer(),
+          GestureDetector(
+            onTap: count > 1 ? onNext : null,
+            child: Text(
+              count > 1 ? '#${o.shortId} · ${index + 1}/$count' : '#${o.shortId}',
+              style: CapText.mono(size: 12, weight: FontWeight.w400, color: p.mu),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(target.isEmpty ? '—' : target, maxLines: 2, overflow: TextOverflow.ellipsis, style: CapText.serif(size: 24, color: p.tx, height: 1.1)),
+                const SizedBox(height: 4),
+                Text(sub, style: CapText.sans(size: 13, color: p.mu)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          if (o.phone != null) ...[
+            IconBox(icon: CapIcons.phone, iconSize: 18, tooltip: l10n.callCustomer, onTap: () => callCustomer(context, order)),
+            const SizedBox(width: 8),
+          ],
+          IconBox(icon: CapIcons.nav, iconSize: 18, tooltip: l10n.navigateToDestination, onTap: () => openNavigation(context, order, toPickup: !started)),
+        ],
+      ),
+      const SizedBox(height: 12),
+      if (o.isCod)
+        CodBanner(
+          title: l10n.cCollectCash('${o.codAmount}'),
+          subtitle: l10n.cCodOrder,
+          trailing: Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              KLabel(l10n.cYouEarn, size: 10, padding: EdgeInsets.zero),
+              Text(rupees(o.fare), style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.amx)),
+            ],
+          ),
+        )
+      else
+        PrepaidStrip(l10n.cPrepaidNoCash),
+      const SizedBox(height: 14),
+      CapButton(
+        label: l10n.cOpenTrip,
+        trailingIcon: CapIcons.arr,
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => TripFlowPage(tripId: 'trip_${order['_id']}', order: order, endpointPost: order['endpointPost'] ?? ''),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+/// Stage name shown in the trip tag, per order type.
+String tripStageLabel(AppLocalizations l10n, CapOrder o, bool started) {
+  if (o.isRide) return started ? l10n.cRideInProgress : l10n.cHeadingToPickup;
+  if (o.isStore) return started ? l10n.cOnTheWay : l10n.cHeadingToStore;
+  return started ? l10n.cOnTheWay : l10n.cHeadingToPickup;
+}

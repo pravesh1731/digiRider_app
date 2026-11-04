@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:digirider/booking/IncomingBookingPage.dart';
 import 'package:digirider/pages/DocumentUploadPage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../global/l10n.dart';
 import '../services/notification_service.dart';
+import '../ui/pickers.dart';
+import '../ui/widgets.dart';
+import 'auth_widgets.dart';
 import '../utils/bottomSnackBar.dart';
 
 class PersonalInfoPage extends StatefulWidget {
@@ -30,8 +32,13 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
   String? _selectedVehicle;
   bool _isLoading = false;
 
-  final List<String> cities = ['Jodhpur', 'Gotan'];
-  final List<String> vehicles = ['Bike', 'Car', 'Auto'];
+  // The website's segmented pickers start on Gotan / Bike.
+  @override
+  void initState() {
+    super.initState();
+    _selectedCity = kCities.first;
+    _selectedVehicle = kVehicles.first;
+  }
 
   void _onNextStep() {
     final name = _nameController.text.trim();
@@ -131,221 +138,75 @@ class _PersonalInfoPageState extends State<PersonalInfoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Common.secondary,
-      appBar: AppBar(
-        elevation: 0,
-        toolbarHeight: 0,
-        backgroundColor: Common.background,
-      ),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Colors.black,
-                    Common.background
-                  ],
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                child: Center(
-                  child: Card(
-                    elevation: 4,
-                    color: Common.primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            context.l10n.enterYourDetails,
-                            style: TextStyle(
-                              fontFamily: 'bold',
-                              fontSize: 20,
-                              fontWeight: Common.weight,
-                              color: Common.secondary,
-                            ),
-                          ),
-                          SizedBox(height: 20),
-                          _buildTextField(_nameController, context.l10n.name),
-                          SizedBox(height: 15),
-                          _buildTextField(
-                            _phoneController,
-                            context.l10n.phoneNumber,
-                            keyboardType: TextInputType.phone,
-                            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
-                          ),
-                          SizedBox(height: 15),
-                          Row(
-                            children: [
-                              Expanded(child: _buildDropdown(context.l10n.selectCity, cities, context.l10n.cityName, _selectedCity, (value) {
-                                setState(() => _selectedCity = value);
-                              })),
-                              SizedBox(width: 10),
-                              Expanded(child: _buildDropdown(context.l10n.selectVehicle, vehicles, context.l10n.vehicleName, _selectedVehicle, (value) {
-                                setState(() => _selectedVehicle = value);
-                              })),
-                            ],
-                          ),
-                          SizedBox(height: 20),
-                          InkWell(
-                            onTap: _onNextStep,
-                            child: Container(
-                              width: double.infinity,
-                              height: 50,
-                              decoration: BoxDecoration(
-                                color: Common.secondary,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  context.l10n.continueNextStep,
-                                  style: TextStyle(
-                                    fontFamily: 'bold',
-                                    fontSize: Common.h2,
-                                    fontWeight: Common.weight2,
-                                    color: Common.primary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 15),
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: Color(0xFFF4F2F2),
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: Text(
-                              context.l10n.infoSafe,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontFamily: 'bold',
-                                fontSize: Common.h4,
-                                fontWeight: Common.weight,
-                                color: Common.light,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+    final l10n = context.l10n;
+    final p = context.cap;
+    return CapAuthScaffold(
+      step: 3,
+      stepLabel: l10n.cBasicInfo,
+      title: l10n.cTellUsAboutYou,
+      children: [
+        FieldLabel(
+          text: l10n.cFullName,
+          child: TextField(
+            controller: _nameController,
+            textCapitalization: TextCapitalization.words,
+            style: CapText.sans(size: 15, color: p.tx),
+            decoration: InputDecoration(hintText: l10n.cNamePlaceholder),
+          ),
+        ),
+        const SizedBox(height: 16),
+        FieldLabel(
+          text: l10n.cMobileNumber,
+          child: Row(
+            children: [
+              const SizedBox(width: 76, child: StaticField('+91', bold: true, center: true)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
+                  onChanged: (_) => setState(() {}),
+                  style: CapText.sans(size: 15, color: p.tx),
+                  decoration: InputDecoration(
+                    hintText: '98765 43210',
+                    suffixIcon: _phoneController.text.trim().length == 10
+                        ? Padding(padding: const EdgeInsets.all(14), child: CapIcon(CapIcons.chk, size: 18, color: p.lv))
+                        : null,
                   ),
                 ),
               ),
-            ),
-            Positioned(
-              top: 16,
-              left: 16,
-              child: InkWell(
-                onTap: () {
-                  Navigator.of(context).pop();
-                },
-                borderRadius: BorderRadius.circular(30),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Common.secondary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.arrow_back, color: Common.primary, size: 20),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-      TextEditingController controller,
-      String hint, {
-        TextInputType keyboardType = TextInputType.text,
-        List<TextInputFormatter>? inputFormatters,
-      }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        border: Border.all(color: Common.secondary, width: 1.5),
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.white,
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        inputFormatters: inputFormatters,
-        decoration: InputDecoration(
-          hintText: hint,
-          border: InputBorder.none,
-          isDense: true,
-        ),
-        style: TextStyle(
-          fontFamily: 'bold',
-          fontSize: Common.h2,
-          fontWeight: Common.weight2,
-        ),
-      ),
-    );
-  }
-
-
-  Widget _buildDropdown(String hint, List<String> items, String Function(String) labelOf, String? value, ValueChanged<String?> onChanged) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Common.secondary, width: 1.5),
-        borderRadius: BorderRadius.circular(10),
-        color: Colors.white,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          icon: Icon(Icons.keyboard_arrow_down_rounded, color: Common.secondary),
-          borderRadius: BorderRadius.circular(10),
-          dropdownColor: Colors.white,
-          hint: Text(
-            hint,
-            style: TextStyle(
-              fontFamily: 'bold',
-              fontSize: Common.h3,
-              fontWeight: Common.weight2,
-              color: Common.light,
-            ),
+            ],
           ),
-          style: TextStyle(
-            fontFamily: 'bold',
-            fontSize: Common.h3,
-            color: Common.secondary,
-          ),
-          onChanged: onChanged,
-          items: items.map((item) {
-            return DropdownMenuItem<String>(
-              value: item,
-              child: Text(
-                labelOf(item),
-                style: TextStyle(
-                  fontFamily: 'bold',
-                  fontSize: Common.h3,
-                  color: Common.secondary,
-                ),
-              ),
-            );
-          }).toList(),
         ),
-      ),
+        const SizedBox(height: 16),
+        FieldLabel(
+          text: l10n.cGoogleEmail,
+          child: Opacity(opacity: 0.8, child: StaticField(widget.email)),
+        ),
+        const SizedBox(height: 16),
+        FieldLabel(
+          text: l10n.cServiceCityK,
+          child: CapSeg<String>(
+            value: _selectedCity ?? kCities.first,
+            onChanged: (v) => setState(() => _selectedCity = v),
+            items: [for (final c in kCities) SegItem(c, l10n.cityName(c))],
+          ),
+        ),
+        const SizedBox(height: 16),
+        FieldLabel(
+          text: l10n.cVehicleTypeK,
+          child: CapSeg<String>(
+            value: _selectedVehicle ?? kVehicles.first,
+            onChanged: (v) => setState(() => _selectedVehicle = v),
+            items: [for (final v in kVehicles) SegItem(v, l10n.vehicleName(v))],
+          ),
+        ),
+        const SizedBox(height: 24),
+        CapButton(label: _isLoading ? l10n.cSaving : l10n.cContinue, trailingIcon: CapIcons.arr, loading: _isLoading, onPressed: _onNextStep),
+        const SizedBox(height: 18),
+        Text(l10n.infoSafe, textAlign: TextAlign.center, style: CapText.sans(size: 12, color: p.mu, height: 1.5)),
+      ],
     );
   }
-
 }

@@ -721,4 +721,991 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get orderAlreadyTaken =>
       'This order was already accepted by another rider.';
+
+  @override
+  String get goodMorning => 'Good morning,';
+
+  @override
+  String get goodAfternoon => 'Good afternoon,';
+
+  @override
+  String get goodEvening => 'Good evening,';
+
+  @override
+  String get navRequests => 'Requests';
+
+  @override
+  String get profile => 'Profile';
+
+  @override
+  String get timeLabel => 'Time';
+
+  @override
+  String get earnLabel => 'Earn';
+
+  @override
+  String get earnedLabel => 'Earned';
+
+  @override
+  String get storeLocation => 'Store location';
+
+  @override
+  String get noActiveRequests => 'No active requests';
+
+  @override
+  String get noActiveOrders => 'No active orders';
+
+  @override
+  String get noActiveOrdersDesc =>
+      'Accept an order from Requests to see it here.';
+
+  @override
+  String get noHistory => 'No history found';
+
+  @override
+  String get getStartedNow => 'Get Started Now';
+
+  @override
+  String get heroLine1 => 'Drive, Deliver,';
+
+  @override
+  String get heroLine2 => 'Earn Daily.';
+
+  @override
+  String get loginSubtitle => 'Welcome back to DigiStall Rider';
+
+  @override
+  String get signupSubtitle => 'Join DigiStall as a Rider today';
+
+  @override
+  String get serviceCity => 'Service city';
+
+  @override
+  String get verificationRequired => 'Verification required';
+
+  @override
+  String get idCard => 'ID Card';
+
+  @override
+  String get cNavHome => 'Home';
+
+  @override
+  String get cNavOrders => 'Orders';
+
+  @override
+  String get cNavTrips => 'Trips';
+
+  @override
+  String get cNavEarnings => 'Earnings';
+
+  @override
+  String get cNavProfile => 'Profile';
+
+  @override
+  String get cBack => 'Back';
+
+  @override
+  String get cContinue => 'Continue';
+
+  @override
+  String get cSaving => 'Saving...';
+
+  @override
+  String get cChange => 'Change';
+
+  @override
+  String get cBrand => 'Digi Captain';
+
+  @override
+  String get cComingSoon => 'Coming soon';
+
+  @override
+  String get cComingSoonTag => 'COMING SOON';
+
+  @override
+  String get cRideRequest => 'Ride request';
+
+  @override
+  String get cParcelDelivery => 'Parcel delivery';
+
+  @override
+  String get cStoreDelivery => 'Store delivery';
+
+  @override
+  String get cRide => 'Ride';
+
+  @override
+  String get cDelivery => 'Delivery';
+
+  @override
+  String get cPickup => 'Pickup';
+
+  @override
+  String get cDrop => 'Drop';
+
+  @override
+  String get cDistance => 'Distance';
+
+  @override
+  String get cDeliverBy => 'Deliver by';
+
+  @override
+  String get cYouEarn => 'You earn';
+
+  @override
+  String get cPrepaid => 'Prepaid';
+
+  @override
+  String get cCash => 'Cash';
+
+  @override
+  String cCodCollect(String amount) {
+    return 'COD · Collect ₹$amount';
+  }
+
+  @override
+  String cCodShort(String amount) {
+    return 'COD (₹$amount)';
+  }
+
+  @override
+  String get cToday => 'Today';
+
+  @override
+  String get cCustomer => 'Customer';
+
+  @override
+  String get cGoodMorning => 'Good morning';
+
+  @override
+  String get cGoodAfternoon => 'Good afternoon';
+
+  @override
+  String get cGoodEvening => 'Good evening';
+
+  @override
+  String get cOnline => 'Online';
+
+  @override
+  String get cOffline => 'Offline';
+
+  @override
+  String get cTodaysEarnings => 'Today\'s earnings';
+
+  @override
+  String cTripsGoal(String trips, String goal) {
+    return '$trips trips · goal ₹$goal';
+  }
+
+  @override
+  String get cOfflineTitle => 'You\'re offline';
+
+  @override
+  String cOfflineDesc(String city) {
+    return 'Go online to receive rides and deliveries in $city.';
+  }
+
+  @override
+  String get cGoOnline => 'Go online';
+
+  @override
+  String get cAllCaughtUp => 'All caught up';
+
+  @override
+  String cAllCaughtUpDesc(String city) {
+    return 'New requests in $city will appear here as soon as customers book.';
+  }
+
+  @override
+  String get cBrowseOrders => 'Browse open & missed orders';
+
+  @override
+  String get cSkip => 'Skip';
+
+  @override
+  String get cSlideToAccept => 'Slide to accept';
+
+  @override
+  String get cSkippedToast => 'Skipped · find it in Orders';
+
+  @override
+  String get cExpiredToast => 'Request expired · find it in Orders';
+
+  @override
+  String get cNowOnline => 'You are now online';
+
+  @override
+  String get cNowOffline => 'You are now offline';
+
+  @override
+  String get cHeadingToPickup => 'Heading to pickup';
+
+  @override
+  String get cHeadingToStore => 'Heading to store';
+
+  @override
+  String get cRideInProgress => 'Ride in progress';
+
+  @override
+  String get cOnTheWay => 'On the way to customer';
+
+  @override
+  String get cOpenTrip => 'Open trip';
+
+  @override
+  String get cAskRideOtp => 'Ask the customer for their ride OTP';
+
+  @override
+  String get cAskParcelOtp => 'Ask the sender for the pickup OTP';
+
+  @override
+  String get cAskDeliveryOtp => 'Ask recipient for delivery OTP';
+
+  @override
+  String get cVerifyStartRide => 'Verify & start ride';
+
+  @override
+  String get cVerifyStartDelivery => 'Verify & start delivery';
+
+  @override
+  String get cVerifyCompleteDelivery => 'Verify & complete delivery';
+
+  @override
+  String cConfirmCompleteDelivery(String amount) {
+    return 'Confirm ₹$amount & complete delivery';
+  }
+
+  @override
+  String get cSlideEndRide => 'Slide to end ride';
+
+  @override
+  String get cSlideToDeliver => 'Slide to deliver';
+
+  @override
+  String get cSlidePickedUp => 'Slide when picked up';
+
+  @override
+  String get cEnter4DigitOtp => 'Please enter 4-digit OTP';
+
+  @override
+  String get cVerifyCodeHint => 'Verify 4-digit code provided by customer';
+
+  @override
+  String cCollectCash(String amount) {
+    return 'Collect ₹$amount in cash';
+  }
+
+  @override
+  String get cCodOrder => 'Cash on delivery order';
+
+  @override
+  String get cPrepaidNoCash =>
+      'Prepaid order · Do not collect cash from customer';
+
+  @override
+  String cCollectCashFrom(String amount) {
+    return 'Collect ₹$amount cash from customer';
+  }
+
+  @override
+  String cCashCollectedCheck(String amount) {
+    return '✓ ₹$amount cash collected';
+  }
+
+  @override
+  String get cTapWhenCash => 'Tap here once cash is received in hand';
+
+  @override
+  String get cCashConfirmed => 'Confirmed received cash from recipient';
+
+  @override
+  String cConfirmCashFirst(String amount) {
+    return 'Please confirm cash collection of ₹$amount before completing delivery';
+  }
+
+  @override
+  String get cEmergencyAssistance => 'Emergency assistance';
+
+  @override
+  String get cSafetySos => 'Safety & SOS';
+
+  @override
+  String get cSosDesc =>
+      'Use only during a genuine emergency. You can call emergency services or share your live trip location.';
+
+  @override
+  String get cCall112 => 'Call emergency 112';
+
+  @override
+  String get cShareLocation => 'Share live trip location';
+
+  @override
+  String cEmergencyShareText(String link) {
+    return 'Emergency alert from a Digi Captain rider. My location: $link';
+  }
+
+  @override
+  String get cTripComplete => 'Trip complete';
+
+  @override
+  String get cDeliveryEarning => 'Delivery earning';
+
+  @override
+  String get cCustomerCashInHand => 'Customer cash in hand';
+
+  @override
+  String cRateCustomer(String name) {
+    return 'Rate $name';
+  }
+
+  @override
+  String get cCashCollectedDone => 'Cash collected · Done';
+
+  @override
+  String get cPaidViaQr => 'Customer can pay by scanning your QR';
+
+  @override
+  String get cOrdersTitle => 'All orders';
+
+  @override
+  String get cOrdersSubtitle =>
+      'Every order stays open for 24 hours. Take any you haven\'t accepted, including ones you missed.';
+
+  @override
+  String get cOpen => 'Open';
+
+  @override
+  String get cMissed => 'Missed';
+
+  @override
+  String get cExpired => 'Expired';
+
+  @override
+  String get cAll => 'All';
+
+  @override
+  String get cRides => 'Rides';
+
+  @override
+  String get cParcels => 'Parcels';
+
+  @override
+  String get cStoreFilter => 'Store';
+
+  @override
+  String cNoOpenOrders(String city) {
+    return 'No open orders right now in $city';
+  }
+
+  @override
+  String get cNothingMissed =>
+      'Nothing missed. Skipped or timed-out requests land here.';
+
+  @override
+  String get cNoExpired => 'No expired orders in this period.';
+
+  @override
+  String get cRemovedAfter24h =>
+      'Orders are removed 24 hours after they\'re posted.';
+
+  @override
+  String cTimeLeft(String time) {
+    return '$time left';
+  }
+
+  @override
+  String get cOrderRetention => 'Order retention:';
+
+  @override
+  String cExpiresIn(String time) {
+    return 'Expires in $time';
+  }
+
+  @override
+  String get cPassed24h => 'This order has passed its 24-hour validity window.';
+
+  @override
+  String get cFinishTripFirst =>
+      'Please complete your ongoing trips before accepting another request.';
+
+  @override
+  String cCodBanner(String amount) {
+    return 'Cash on delivery · Collect ₹$amount';
+  }
+
+  @override
+  String cCollectAtDoor(String amount) {
+    return 'Collect ₹$amount cash from customer at doorstep';
+  }
+
+  @override
+  String get cTripsTitle => 'Your trips';
+
+  @override
+  String get cDeliveries => 'Deliveries';
+
+  @override
+  String get cEarningsTab => 'Earnings';
+
+  @override
+  String get cWalletTab => 'Wallet';
+
+  @override
+  String get cBonusTab => 'Bonus';
+
+  @override
+  String get cYourDay => 'Your day';
+
+  @override
+  String get cYourWeek => 'Your week';
+
+  @override
+  String get cYourMonth => 'Your month';
+
+  @override
+  String get cRange7D => '7D';
+
+  @override
+  String get cRange30D => '30D';
+
+  @override
+  String cTripsCount(String count) {
+    return '$count trips';
+  }
+
+  @override
+  String get cTripsToday => 'trips completed today';
+
+  @override
+  String get cTrips7d => 'trips completed in last 7 days';
+
+  @override
+  String get cTrips30d => 'trips completed in last 30 days';
+
+  @override
+  String get cSlotMorning => '6-11 AM';
+
+  @override
+  String get cSlotNoon => '11-2 PM';
+
+  @override
+  String get cSlotAfternoon => '2-5 PM';
+
+  @override
+  String get cSlotEvening => '5-9 PM';
+
+  @override
+  String get cSlotNight => '9-12 AM';
+
+  @override
+  String get cDays => 'Sun,Mon,Tue,Wed,Thu,Fri,Sat';
+
+  @override
+  String get c30dAgo => '30d ago';
+
+  @override
+  String get c15d => '15d';
+
+  @override
+  String get cGotanRides => 'Gotan rides';
+
+  @override
+  String get cGotanParcels => 'Gotan parcels';
+
+  @override
+  String get cDigistallStore => 'DigiStall orders';
+
+  @override
+  String get cPrepaidEarnings => 'Prepaid earnings';
+
+  @override
+  String get cWithdrawToUpi => 'Withdraw to UPI / Bank';
+
+  @override
+  String get cWithdrawSoon =>
+      'Withdrawals are coming soon. Customers pay you directly for now.';
+
+  @override
+  String get cCashInHand => 'Cash in hand';
+
+  @override
+  String get cCashInHandSub => 'Collected directly from cash trips';
+
+  @override
+  String get cRecentActivity => 'Recent activity';
+
+  @override
+  String get cNoTransactions => 'No completed transactions yet';
+
+  @override
+  String cTripActivity(String id, String kind) {
+    return 'Trip #$id · $kind';
+  }
+
+  @override
+  String get cPeakHours => 'Peak hours · 6–9 PM';
+
+  @override
+  String get cPeakHoursSub => '+₹30 extra on every completed trip';
+
+  @override
+  String get cDailyTarget => 'Complete 10 trips today';
+
+  @override
+  String get cWeeklyTarget => '50 trips this week';
+
+  @override
+  String get cClaim => 'Claim';
+
+  @override
+  String get cInProgress => 'In progress';
+
+  @override
+  String cTripsProgress(String current, String target) {
+    return '$current / $target trips';
+  }
+
+  @override
+  String get cReferCaptain => 'Refer a captain';
+
+  @override
+  String get cBonusSoon => 'Bonus payouts are coming soon.';
+
+  @override
+  String get cCaptainPass => 'Captain pass';
+
+  @override
+  String get cVerified => 'Verified';
+
+  @override
+  String get cUnderReview => 'Under review';
+
+  @override
+  String get cVehicle => 'Vehicle';
+
+  @override
+  String get cCity => 'City';
+
+  @override
+  String get cRating => 'Rating';
+
+  @override
+  String get cAcceptance => 'Acceptance';
+
+  @override
+  String get cTrips => 'Trips';
+
+  @override
+  String get cLanguageLabel => 'Language / भाषा';
+
+  @override
+  String get cServiceCityK => 'Service city';
+
+  @override
+  String get cVehicleTypeK => 'Vehicle type';
+
+  @override
+  String get cNotifications => 'Notifications';
+
+  @override
+  String get cDarkTheme => 'Dark theme';
+
+  @override
+  String get cDocuments => 'Documents';
+
+  @override
+  String get cAlerts => 'Alerts';
+
+  @override
+  String get cReferEarn => 'Refer & earn';
+
+  @override
+  String get cHelpSupport => 'Help & support';
+
+  @override
+  String get cDeleteAccount => 'Delete account';
+
+  @override
+  String get couldNotOpenLink => 'Could not open the link.';
+
+  @override
+  String get cLogOut => 'Log out';
+
+  @override
+  String get cServiceArea => 'Service area';
+
+  @override
+  String get cChooseCity => 'Choose your city';
+
+  @override
+  String get cServiceAreaNote =>
+      'You will receive rides, parcel deliveries, and store orders from this city.';
+
+  @override
+  String get cRajasthan => 'Rajasthan';
+
+  @override
+  String get cYourVehicle => 'Your vehicle';
+
+  @override
+  String get cChooseVehicle => 'Choose your vehicle';
+
+  @override
+  String get cVehicleNote => 'Ride requests are matched to this vehicle type.';
+
+  @override
+  String cCityToast(String city) {
+    return 'Service city: $city';
+  }
+
+  @override
+  String get cAadhaar => 'Aadhaar card';
+
+  @override
+  String get cLicence => 'Driving licence';
+
+  @override
+  String get cPaymentQr => 'Payment QR code';
+
+  @override
+  String get cProfilePhoto => 'Profile photo';
+
+  @override
+  String get cUploadedVerified => 'Uploaded & verified';
+
+  @override
+  String get cUploadedActive => 'Uploaded & active';
+
+  @override
+  String get cNotUploaded => 'Not uploaded';
+
+  @override
+  String get cViewDocument => 'View document ↗';
+
+  @override
+  String get cStoredSecurely => 'Stored securely on DigiStall';
+
+  @override
+  String get cUploadDocUpdate => 'Upload document update';
+
+  @override
+  String get cDownloadIdCard => 'Download ID card';
+
+  @override
+  String get cMarkAllRead => 'Mark all read';
+
+  @override
+  String cNewAlerts(String count) {
+    return '$count NEW';
+  }
+
+  @override
+  String get cLiveAlerts => 'LIVE ALERTS';
+
+  @override
+  String get cNoAlerts => 'No alerts';
+
+  @override
+  String get cNoAlertsDesc =>
+      'Live order alerts, trip updates, and system notices will appear here in real time.';
+
+  @override
+  String get cActiveTripAlert => 'Active trip in progress';
+
+  @override
+  String cOrdersAvailable(String count) {
+    return '$count orders available';
+  }
+
+  @override
+  String cOrdersAvailableDesc(String city) {
+    return 'New live requests available in $city. Tap to accept.';
+  }
+
+  @override
+  String get cLiveNow => 'Live now';
+
+  @override
+  String get cCockpitOnline => 'Cockpit online';
+
+  @override
+  String cCockpitOnlineDesc(String city) {
+    return 'Ready to accept rides and deliveries in $city.';
+  }
+
+  @override
+  String get cCockpitOffline => 'Cockpit offline';
+
+  @override
+  String get cCockpitOfflineDesc =>
+      'Turn online from the home screen to start receiving bookings.';
+
+  @override
+  String get cActive => 'Active';
+
+  @override
+  String get cPaused => 'Paused';
+
+  @override
+  String get cBadgeOngoing => 'ONGOING';
+
+  @override
+  String get cBadgeNew => 'NEW';
+
+  @override
+  String get cBadgeRead => 'READ';
+
+  @override
+  String get cBadgeAlert => 'ALERT';
+
+  @override
+  String get cJustNow => 'Just now';
+
+  @override
+  String cMinutesAgo(String n) {
+    return '${n}m ago';
+  }
+
+  @override
+  String cHoursAgo(String n) {
+    return '${n}h ago';
+  }
+
+  @override
+  String cDaysAgo(String n) {
+    return '${n}d ago';
+  }
+
+  @override
+  String get cReferSoonTitle => 'Referral program coming soon';
+
+  @override
+  String get cReferSoonDesc =>
+      'We are building a referral rewards program for Digi Captains. Soon you will be able to invite fellow riders and drivers and earn bonuses.';
+
+  @override
+  String get cNotifyMe => 'Notify me when live';
+
+  @override
+  String get cNotifyMeToast =>
+      'We\'ll let you know when the referral program launches!';
+
+  @override
+  String get cReferStep1 => 'Invite captains';
+
+  @override
+  String get cReferStep1Desc =>
+      'Share your personal invite link with fellow riders';
+
+  @override
+  String get cReferStep2 => 'They start driving';
+
+  @override
+  String get cReferStep2Desc =>
+      'Your referrals onboard and complete their first trips';
+
+  @override
+  String get cReferStep3 => 'Earn rewards';
+
+  @override
+  String get cReferStep3Desc =>
+      'A bonus for every captain who joins through you';
+
+  @override
+  String get cFaq1Q => 'The customer did not share the OTP';
+
+  @override
+  String get cFaq1A =>
+      'Ask the customer to open their Gotan or DigiStall app. The 4-digit OTP is shown on their live order screen. Never start a trip without entering it.';
+
+  @override
+  String get cFaq2Q => 'How many orders can I take at once?';
+
+  @override
+  String get cFaq2A =>
+      'You can hold up to 2 active orders. Finish one before you accept another.';
+
+  @override
+  String get cFaq3Q => 'How do I get paid?';
+
+  @override
+  String get cFaq3A =>
+      'Customers pay you directly in cash or by scanning your payment QR code. Your completed trips and earnings are in the Earnings tab.';
+
+  @override
+  String get cFaq4Q => 'I feel unsafe on a trip';
+
+  @override
+  String get cFaq4A =>
+      'Tap the red SOS button on your active trip screen. You can call 112 or share your live location.';
+
+  @override
+  String get cHeroPre => 'Drive on ';
+
+  @override
+  String get cHeroEm => 'your';
+
+  @override
+  String get cHeroPost => ' terms.';
+
+  @override
+  String get cHeroSub =>
+      'Auto, bike or car — earn up to ₹1,000 a day with rides and deliveries near you.';
+
+  @override
+  String get cStartEarning => 'Start earning';
+
+  @override
+  String get cLogIn => 'Log in';
+
+  @override
+  String get cNewRequest => 'New request';
+
+  @override
+  String get cDailyPotential => 'Daily potential';
+
+  @override
+  String get cVehicleTypes => 'Vehicle types';
+
+  @override
+  String get cServiceCities => 'Service cities';
+
+  @override
+  String get cWelcomeBackCaptain => 'Welcome back, Captain.';
+
+  @override
+  String get cLoginDesc =>
+      'Sign in to access your Captain cockpit, live orders, and earnings.';
+
+  @override
+  String get cSignInWithGoogle => 'Sign in with Google';
+
+  @override
+  String get cSigningIn => 'Signing in...';
+
+  @override
+  String get cNewHere => 'Don\'t have a Captain account?';
+
+  @override
+  String get cSignUpToDrive => 'Sign up to drive';
+
+  @override
+  String get cSecuredVia => 'Secured via DigiStall Firebase Auth';
+
+  @override
+  String cStepOf(String current, String total) {
+    return 'Step $current of $total';
+  }
+
+  @override
+  String cStepSub(String current, String total, String label) {
+    return 'Step $current of $total · $label';
+  }
+
+  @override
+  String get cIdentity => 'Identity';
+
+  @override
+  String get cDigitalId => 'Captain ID';
+
+  @override
+  String get cBasicInfo => 'Basic info';
+
+  @override
+  String get cVerificationLbl => 'Verification';
+
+  @override
+  String get cSignUpDesc =>
+      'Join the Digi Captain network. Sign up with your Google account to get verified and start taking rides and deliveries.';
+
+  @override
+  String get cSignUpWithGoogle => 'Sign up with Google';
+
+  @override
+  String get cConnectingGoogle => 'Connecting Google...';
+
+  @override
+  String get cAlreadyRegistered => 'Already registered as a Captain?';
+
+  @override
+  String get cLoginHere => 'Log in here';
+
+  @override
+  String get cCaptainDomain => 'Captain domain';
+
+  @override
+  String get cTellUsAboutYou => 'Tell us about you';
+
+  @override
+  String get cFullName => 'Full name';
+
+  @override
+  String get cNamePlaceholder => 'e.g. Captain Name';
+
+  @override
+  String get cMobileNumber => 'Mobile number';
+
+  @override
+  String get cGoogleEmail => 'Connected Google email';
+
+  @override
+  String get cUploadDocsTitle => 'Upload documents';
+
+  @override
+  String get cUploadDocsDesc =>
+      'Upload your driving licence and payment QR code. Aadhaar and profile photo are optional.';
+
+  @override
+  String get cRequiredTag => 'REQUIRED';
+
+  @override
+  String get cOptionalTag => 'OPTIONAL';
+
+  @override
+  String get cUploadedTag => 'UPLOADED';
+
+  @override
+  String get cUploadBtn => 'Upload';
+
+  @override
+  String get cAadhaarDesc => 'Front & back photo';
+
+  @override
+  String get cLicenceDesc => 'Valid private/commercial DL';
+
+  @override
+  String get cQrDesc => 'UPI QR for customer payments';
+
+  @override
+  String get cPhotoDesc => 'Clear passport-style photo';
+
+  @override
+  String get cSubmitForReview => 'Submit for review';
+
+  @override
+  String get cSplashPre => 'Finding your ';
+
+  @override
+  String get cSplashEm => 'next';
+
+  @override
+  String get cSplashPost => ' ride.';
+
+  @override
+  String get cSplash1 => 'Going online';
+
+  @override
+  String get cSplash2 => 'Scanning for requests near you';
+
+  @override
+  String get cSplash3 => 'Matching your vehicle';
+
+  @override
+  String get cViewRoute => 'View route';
+
+  @override
+  String get cTripDetails => 'Trip details';
+
+  @override
+  String get cNoRating => '—';
 }

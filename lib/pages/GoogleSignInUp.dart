@@ -3,8 +3,6 @@ import 'dart:convert';
 import 'package:digirider/global/Common.dart';
 import 'package:digirider/pages/DocumentUploadPage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
@@ -14,8 +12,10 @@ import 'package:url_launcher/url_launcher.dart';
 import '../NavMain.dart';
 import '../global/l10n.dart';
 import '../services/notification_service.dart';
+import '../ui/widgets.dart';
 import '../utils/bottomSnackBar.dart';
 import 'SubdomainPage.dart';
+import 'auth_widgets.dart';
 
 
 class GoogleLoginPage extends StatefulWidget {
@@ -198,200 +198,54 @@ class _GoogleLoginPageState extends State<GoogleLoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    // return AnnotatedRegion<SystemUiOverlayStyle>(
-    // value: SystemUiOverlayStyle(
-    //   statusBarIconBrightness: Brightness.dark,
-    //   statusBarColor: Colors.transparent
-    // ),
-    return Scaffold(
-      backgroundColor: Common.secondary,
-      appBar: AppBar(
-        elevation: 0,
-        toolbarHeight: 0,
-        backgroundColor: Common.background,
-      ),
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Colors.black,
-                    Common.background
-                  ],
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12.0, left: 12.0, top: 12),
-                    child: Card(
-                      elevation: 4,
-                      child: Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: EdgeInsets.all(20),
-                        child: Column(
-                          children: [
-                            Text(_isLogin ? context.l10n.loginToAccount : context.l10n.createNewAccount, style: TextStyle(fontFamily: 'bold', fontSize: 20, fontWeight: Common.weight),),
-                            SizedBox(height: 20,),
-                            InkWell(
-                              onTap: _handleGoogleSignIn,
-                              child: Container(
-                                height: 50,
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                  color: Common.secondary,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child:
-                              _isLoading
-                              ? Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  SizedBox(
-                                    height: 20,
-                                    width: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Common.primary),
-                                    ),
-                                  ),
-                                ],
-                              )
-                                  : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SvgPicture.asset(
-                                  'assets/Icons/google.svg',
-                                  width: 20,
-                                  height: 20,
-                                  color: Common.primary,
-                                ),
-                                SizedBox(width: 10),
-                                Text(
-                                  context.l10n.continueWithGoogle,
-                                  style: TextStyle(
-                                    fontFamily: 'bold',
-                                    fontSize: Common.h2,
-                                    fontWeight: Common.weight2,
-                                    color: Common.primary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                      ),
-                            ),
-                            SizedBox(height: 15,),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Container(
-                                    height: 1,
-                                    color: Common.light,
-                                  ),
-                                ),
-                                SizedBox(width: 10,),
-                                Text(context.l10n.or, style: TextStyle(fontFamily: 'bold', fontSize: Common.h3, fontWeight: Common.weight2, color: Common.secondary),),
-                                SizedBox(width: 10,),
-                                Expanded(
-                                  child: Container(
-                                    height: 1,
-                                    color: Common.light,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            SizedBox(height: 15,),
-                            InkWell(
-
-                              onTap: () {
-                                setState(() {
-                                  _isLogin = !_isLogin; // 🔁 Toggle between SignIn/SignUp
-                                });
-                              },
-                              child: RichText(
-                                text: TextSpan(
-                                  children: [
-                                    TextSpan(
-                                      text: _isLogin ? context.l10n.createNewAccountQuestion : context.l10n.alreadyHaveAccountQuestion, // 🔁 Toggle text
-                                      style: TextStyle(
-                                        fontFamily: 'bold',
-                                        fontSize: Common.h2,
-                                        fontWeight: Common.weight2,
-                                        color: Common.light,
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: ' ${_isLogin ? context.l10n.signUp : context.l10n.signIn}', // 🔁 Toggle action
-                                      style: TextStyle(
-                                        fontFamily: 'bold',
-                                        fontSize: Common.h2,
-                                        fontWeight: Common.weight2,
-                                        color: Common.secondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 15,),
-                            InkWell(
-                              onTap: (){
-                                _launchUrl("https://rider.digistall.in/#/privacy-policy");
-                              },
-                              child: Card(
-                                // elevation: 4,
-                                shadowColor: Common.light.withOpacity(0.5),
-
-                                color: Colors.transparent,
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: Color(0xFFF4F2F2),
-                                    // color: Common.background,
-                                    borderRadius: BorderRadius.circular(5),
-                                  ),
-                                  child: Text(context.l10n.agreeTerms, textAlign: TextAlign.center, style: TextStyle(color: Common.light, fontWeight: Common.weight, fontSize: Common.h4, fontFamily: 'bold'), softWrap: true,),
-                                ),
-                              ),
-                            )
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              top: 16,
-              left: 16,
-              child: InkWell(
-                onTap: () {
-                  Navigator.of(context).pop();
-                },
-                borderRadius: BorderRadius.circular(30),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Common.secondary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(Icons.arrow_back, color: Common.primary, size: 20),
-                ),
-              ),
-            ),
-          ],
+    final l10n = context.l10n;
+    final p = context.cap;
+    if (_isLogin) {
+      return CapAuthScaffold(
+        title: l10n.cWelcomeBackCaptain,
+        titleSize: 44,
+        onBack: () => Navigator.of(context).maybePop(),
+        children: [
+          Text(l10n.cLoginDesc, style: CapText.sans(size: 15, color: p.mu, height: 1.5)),
+          const SizedBox(height: 28),
+          GoogleButton(label: _isLoading ? l10n.cSigningIn : l10n.cSignInWithGoogle, loading: _isLoading, onTap: _handleGoogleSignIn),
+          const SizedBox(height: 32),
+          AuthSwitchLink(question: l10n.cNewHere, action: l10n.cSignUpToDrive, onTap: () => setState(() => _isLogin = false)),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CapIcon(CapIcons.lock, size: 14, color: p.mu),
+              const SizedBox(width: 8),
+              Text(l10n.cSecuredVia, style: CapText.sans(size: 12, color: p.mu)),
+            ],
+          ),
+          const SizedBox(height: 18),
+          GestureDetector(
+            onTap: () => _launchUrl('https://rider.digistall.in/privacy-policy'),
+            child: Text(l10n.agreeTerms, textAlign: TextAlign.center, style: CapText.sans(size: 12, color: p.mu, height: 1.5)),
+          ),
+        ],
+      );
+    }
+    return CapAuthScaffold(
+      step: 1,
+      stepLabel: l10n.cIdentity,
+      title: l10n.cSignUpToDrive,
+      onBack: () => Navigator.of(context).maybePop(),
+      backLabel: l10n.cNavHome,
+      children: [
+        Text(l10n.cSignUpDesc, style: CapText.sans(size: 15, color: p.mu, height: 1.55)),
+        const SizedBox(height: 28),
+        GoogleButton(label: _isLoading ? l10n.cConnectingGoogle : l10n.cSignUpWithGoogle, loading: _isLoading, onTap: _handleGoogleSignIn),
+        const SizedBox(height: 32),
+        AuthSwitchLink(question: l10n.cAlreadyRegistered, action: l10n.cLoginHere, onTap: () => setState(() => _isLogin = true)),
+        const SizedBox(height: 24),
+        GestureDetector(
+          onTap: () => _launchUrl('https://rider.digistall.in/privacy-policy'),
+          child: Text(l10n.agreeTerms, textAlign: TextAlign.center, style: CapText.sans(size: 12, color: p.mu, height: 1.5)),
         ),
-      ),
+      ],
     );
   }
 }

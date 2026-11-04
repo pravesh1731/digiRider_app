@@ -39,7 +39,7 @@ class LocationService {
     if (_running) return;
     _running = true;
 
-    unawaited(_setActive(true));
+    unawaited(_setActive(await isOnline()));
 
     _positionSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
@@ -59,6 +59,23 @@ class LocationService {
     _orderTimer?.cancel();
     _orderTimer = null;
     await _setActive(false);
+  }
+
+  static const String _onlineKey = 'isOnline';
+
+  /// The Home screen's Online switch (on by default).
+  Future<bool> isOnline() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_onlineKey) ?? true;
+  }
+
+  /// Going offline only marks the rider inactive; location keeps flowing for active orders,
+  /// so customers can still see their rider (same as the website).
+  Future<void> setOnline(bool online) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_onlineKey, online);
+    if (_riderDomain.isEmpty) _riderDomain = prefs.getString('riderDomain') ?? '';
+    if (_riderDomain.isNotEmpty) await _setActive(online);
   }
 
   Future<bool> _ensurePermission() async {

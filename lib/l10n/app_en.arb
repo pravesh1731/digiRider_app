@@ -347,5 +347,534 @@
   "upload": "Upload",
   "documentsHint": "All documents must be clear and readable. Upload only JPG, PNG, or PDF files.",
   "or": "or",
-  "orderAlreadyTaken": "This order was already accepted by another rider."
+  "orderAlreadyTaken": "This order was already accepted by another rider.",
+  "goodMorning": "Good morning,",
+  "goodAfternoon": "Good afternoon,",
+  "goodEvening": "Good evening,",
+  "navRequests": "Requests",
+  "profile": "Profile",
+  "timeLabel": "Time",
+  "earnLabel": "Earn",
+  "earnedLabel": "Earned",
+  "storeLocation": "Store location",
+  "noActiveRequests": "No active requests",
+  "noActiveOrders": "No active orders",
+  "noActiveOrdersDesc": "Accept an order from Requests to see it here.",
+  "noHistory": "No history found",
+  "getStartedNow": "Get Started Now",
+  "heroLine1": "Drive, Deliver,",
+  "heroLine2": "Earn Daily.",
+  "loginSubtitle": "Welcome back to DigiStall Rider",
+  "signupSubtitle": "Join DigiStall as a Rider today",
+  "serviceCity": "Service city",
+  "verificationRequired": "Verification required",
+  "idCard": "ID Card",
+  "cNavHome": "Home",
+  "cNavOrders": "Orders",
+  "cNavTrips": "Trips",
+  "cNavEarnings": "Earnings",
+  "cNavProfile": "Profile",
+  "cBack": "Back",
+  "cContinue": "Continue",
+  "cSaving": "Saving...",
+  "cChange": "Change",
+  "cBrand": "Digi Captain",
+  "cComingSoon": "Coming soon",
+  "cComingSoonTag": "COMING SOON",
+  "cRideRequest": "Ride request",
+  "cParcelDelivery": "Parcel delivery",
+  "cStoreDelivery": "Store delivery",
+  "cRide": "Ride",
+  "cDelivery": "Delivery",
+  "cPickup": "Pickup",
+  "cDrop": "Drop",
+  "cDistance": "Distance",
+  "cDeliverBy": "Deliver by",
+  "cYouEarn": "You earn",
+  "cPrepaid": "Prepaid",
+  "cCash": "Cash",
+  "cCodCollect": "COD · Collect ₹{amount}",
+  "@cCodCollect": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cCodShort": "COD (₹{amount})",
+  "@cCodShort": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cToday": "Today",
+  "cCustomer": "Customer",
+  "cGoodMorning": "Good morning",
+  "cGoodAfternoon": "Good afternoon",
+  "cGoodEvening": "Good evening",
+  "cOnline": "Online",
+  "cOffline": "Offline",
+  "cTodaysEarnings": "Today's earnings",
+  "cTripsGoal": "{trips} trips · goal ₹{goal}",
+  "@cTripsGoal": {
+    "placeholders": {
+      "trips": {
+        "type": "String"
+      },
+      "goal": {
+        "type": "String"
+      }
+    }
+  },
+  "cOfflineTitle": "You're offline",
+  "cOfflineDesc": "Go online to receive rides and deliveries in {city}.",
+  "@cOfflineDesc": {
+    "placeholders": {
+      "city": {
+        "type": "String"
+      }
+    }
+  },
+  "cGoOnline": "Go online",
+  "cAllCaughtUp": "All caught up",
+  "cAllCaughtUpDesc": "New requests in {city} will appear here as soon as customers book.",
+  "@cAllCaughtUpDesc": {
+    "placeholders": {
+      "city": {
+        "type": "String"
+      }
+    }
+  },
+  "cBrowseOrders": "Browse open & missed orders",
+  "cSkip": "Skip",
+  "cSlideToAccept": "Slide to accept",
+  "cSkippedToast": "Skipped · find it in Orders",
+  "cExpiredToast": "Request expired · find it in Orders",
+  "cNowOnline": "You are now online",
+  "cNowOffline": "You are now offline",
+  "cHeadingToPickup": "Heading to pickup",
+  "cHeadingToStore": "Heading to store",
+  "cRideInProgress": "Ride in progress",
+  "cOnTheWay": "On the way to customer",
+  "cOpenTrip": "Open trip",
+  "cAskRideOtp": "Ask the customer for their ride OTP",
+  "cAskParcelOtp": "Ask the sender for the pickup OTP",
+  "cAskDeliveryOtp": "Ask recipient for delivery OTP",
+  "cVerifyStartRide": "Verify & start ride",
+  "cVerifyStartDelivery": "Verify & start delivery",
+  "cVerifyCompleteDelivery": "Verify & complete delivery",
+  "cConfirmCompleteDelivery": "Confirm ₹{amount} & complete delivery",
+  "@cConfirmCompleteDelivery": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cSlideEndRide": "Slide to end ride",
+  "cSlideToDeliver": "Slide to deliver",
+  "cSlidePickedUp": "Slide when picked up",
+  "cEnter4DigitOtp": "Please enter 4-digit OTP",
+  "cVerifyCodeHint": "Verify 4-digit code provided by customer",
+  "cCollectCash": "Collect ₹{amount} in cash",
+  "@cCollectCash": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cCodOrder": "Cash on delivery order",
+  "cPrepaidNoCash": "Prepaid order · Do not collect cash from customer",
+  "cCollectCashFrom": "Collect ₹{amount} cash from customer",
+  "@cCollectCashFrom": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cCashCollectedCheck": "✓ ₹{amount} cash collected",
+  "@cCashCollectedCheck": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cTapWhenCash": "Tap here once cash is received in hand",
+  "cCashConfirmed": "Confirmed received cash from recipient",
+  "cConfirmCashFirst": "Please confirm cash collection of ₹{amount} before completing delivery",
+  "@cConfirmCashFirst": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cEmergencyAssistance": "Emergency assistance",
+  "cSafetySos": "Safety & SOS",
+  "cSosDesc": "Use only during a genuine emergency. You can call emergency services or share your live trip location.",
+  "cCall112": "Call emergency 112",
+  "cShareLocation": "Share live trip location",
+  "cEmergencyShareText": "Emergency alert from a Digi Captain rider. My location: {link}",
+  "@cEmergencyShareText": {
+    "placeholders": {
+      "link": {
+        "type": "String"
+      }
+    }
+  },
+  "cTripComplete": "Trip complete",
+  "cDeliveryEarning": "Delivery earning",
+  "cCustomerCashInHand": "Customer cash in hand",
+  "cRateCustomer": "Rate {name}",
+  "@cRateCustomer": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "cCashCollectedDone": "Cash collected · Done",
+  "cPaidViaQr": "Customer can pay by scanning your QR",
+  "cOrdersTitle": "All orders",
+  "cOrdersSubtitle": "Every order stays open for 24 hours. Take any you haven't accepted, including ones you missed.",
+  "cOpen": "Open",
+  "cMissed": "Missed",
+  "cExpired": "Expired",
+  "cAll": "All",
+  "cRides": "Rides",
+  "cParcels": "Parcels",
+  "cStoreFilter": "Store",
+  "cNoOpenOrders": "No open orders right now in {city}",
+  "@cNoOpenOrders": {
+    "placeholders": {
+      "city": {
+        "type": "String"
+      }
+    }
+  },
+  "cNothingMissed": "Nothing missed. Skipped or timed-out requests land here.",
+  "cNoExpired": "No expired orders in this period.",
+  "cRemovedAfter24h": "Orders are removed 24 hours after they're posted.",
+  "cTimeLeft": "{time} left",
+  "@cTimeLeft": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "cOrderRetention": "Order retention:",
+  "cExpiresIn": "Expires in {time}",
+  "@cExpiresIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "cPassed24h": "This order has passed its 24-hour validity window.",
+  "cFinishTripFirst": "Please complete your ongoing trips before accepting another request.",
+  "cCodBanner": "Cash on delivery · Collect ₹{amount}",
+  "@cCodBanner": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cCollectAtDoor": "Collect ₹{amount} cash from customer at doorstep",
+  "@cCollectAtDoor": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "cTripsTitle": "Your trips",
+  "cDeliveries": "Deliveries",
+  "cEarningsTab": "Earnings",
+  "cWalletTab": "Wallet",
+  "cBonusTab": "Bonus",
+  "cYourDay": "Your day",
+  "cYourWeek": "Your week",
+  "cYourMonth": "Your month",
+  "cRange7D": "7D",
+  "cRange30D": "30D",
+  "cTripsCount": "{count} trips",
+  "@cTripsCount": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "cTripsToday": "trips completed today",
+  "cTrips7d": "trips completed in last 7 days",
+  "cTrips30d": "trips completed in last 30 days",
+  "cSlotMorning": "6-11 AM",
+  "cSlotNoon": "11-2 PM",
+  "cSlotAfternoon": "2-5 PM",
+  "cSlotEvening": "5-9 PM",
+  "cSlotNight": "9-12 AM",
+  "cDays": "Sun,Mon,Tue,Wed,Thu,Fri,Sat",
+  "c30dAgo": "30d ago",
+  "c15d": "15d",
+  "cGotanRides": "Gotan rides",
+  "cGotanParcels": "Gotan parcels",
+  "cDigistallStore": "DigiStall orders",
+  "cPrepaidEarnings": "Prepaid earnings",
+  "cWithdrawToUpi": "Withdraw to UPI / Bank",
+  "cWithdrawSoon": "Withdrawals are coming soon. Customers pay you directly for now.",
+  "cCashInHand": "Cash in hand",
+  "cCashInHandSub": "Collected directly from cash trips",
+  "cRecentActivity": "Recent activity",
+  "cNoTransactions": "No completed transactions yet",
+  "cTripActivity": "Trip #{id} · {kind}",
+  "@cTripActivity": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "kind": {
+        "type": "String"
+      }
+    }
+  },
+  "cPeakHours": "Peak hours · 6–9 PM",
+  "cPeakHoursSub": "+₹30 extra on every completed trip",
+  "cDailyTarget": "Complete 10 trips today",
+  "cWeeklyTarget": "50 trips this week",
+  "cClaim": "Claim",
+  "cInProgress": "In progress",
+  "cTripsProgress": "{current} / {target} trips",
+  "@cTripsProgress": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      }
+    }
+  },
+  "cReferCaptain": "Refer a captain",
+  "cBonusSoon": "Bonus payouts are coming soon.",
+  "cCaptainPass": "Captain pass",
+  "cVerified": "Verified",
+  "cUnderReview": "Under review",
+  "cVehicle": "Vehicle",
+  "cCity": "City",
+  "cRating": "Rating",
+  "cAcceptance": "Acceptance",
+  "cTrips": "Trips",
+  "cLanguageLabel": "Language / भाषा",
+  "cServiceCityK": "Service city",
+  "cVehicleTypeK": "Vehicle type",
+  "cNotifications": "Notifications",
+  "cDarkTheme": "Dark theme",
+  "cDocuments": "Documents",
+  "cAlerts": "Alerts",
+  "cReferEarn": "Refer & earn",
+  "cHelpSupport": "Help & support",
+  "cDeleteAccount": "Delete account",
+  "couldNotOpenLink": "Could not open the link.",
+  "cLogOut": "Log out",
+  "cServiceArea": "Service area",
+  "cChooseCity": "Choose your city",
+  "cServiceAreaNote": "You will receive rides, parcel deliveries, and store orders from this city.",
+  "cRajasthan": "Rajasthan",
+  "cYourVehicle": "Your vehicle",
+  "cChooseVehicle": "Choose your vehicle",
+  "cVehicleNote": "Ride requests are matched to this vehicle type.",
+  "cCityToast": "Service city: {city}",
+  "@cCityToast": {
+    "placeholders": {
+      "city": {
+        "type": "String"
+      }
+    }
+  },
+  "cAadhaar": "Aadhaar card",
+  "cLicence": "Driving licence",
+  "cPaymentQr": "Payment QR code",
+  "cProfilePhoto": "Profile photo",
+  "cUploadedVerified": "Uploaded & verified",
+  "cUploadedActive": "Uploaded & active",
+  "cNotUploaded": "Not uploaded",
+  "cViewDocument": "View document ↗",
+  "cStoredSecurely": "Stored securely on DigiStall",
+  "cUploadDocUpdate": "Upload document update",
+  "cDownloadIdCard": "Download ID card",
+  "cMarkAllRead": "Mark all read",
+  "cNewAlerts": "{count} NEW",
+  "@cNewAlerts": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "cLiveAlerts": "LIVE ALERTS",
+  "cNoAlerts": "No alerts",
+  "cNoAlertsDesc": "Live order alerts, trip updates, and system notices will appear here in real time.",
+  "cActiveTripAlert": "Active trip in progress",
+  "cOrdersAvailable": "{count} orders available",
+  "@cOrdersAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "cOrdersAvailableDesc": "New live requests available in {city}. Tap to accept.",
+  "@cOrdersAvailableDesc": {
+    "placeholders": {
+      "city": {
+        "type": "String"
+      }
+    }
+  },
+  "cLiveNow": "Live now",
+  "cCockpitOnline": "Cockpit online",
+  "cCockpitOnlineDesc": "Ready to accept rides and deliveries in {city}.",
+  "@cCockpitOnlineDesc": {
+    "placeholders": {
+      "city": {
+        "type": "String"
+      }
+    }
+  },
+  "cCockpitOffline": "Cockpit offline",
+  "cCockpitOfflineDesc": "Turn online from the home screen to start receiving bookings.",
+  "cActive": "Active",
+  "cPaused": "Paused",
+  "cBadgeOngoing": "ONGOING",
+  "cBadgeNew": "NEW",
+  "cBadgeRead": "READ",
+  "cBadgeAlert": "ALERT",
+  "cJustNow": "Just now",
+  "cMinutesAgo": "{n}m ago",
+  "@cMinutesAgo": {
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "cHoursAgo": "{n}h ago",
+  "@cHoursAgo": {
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "cDaysAgo": "{n}d ago",
+  "@cDaysAgo": {
+    "placeholders": {
+      "n": {
+        "type": "String"
+      }
+    }
+  },
+  "cReferSoonTitle": "Referral program coming soon",
+  "cReferSoonDesc": "We are building a referral rewards program for Digi Captains. Soon you will be able to invite fellow riders and drivers and earn bonuses.",
+  "cNotifyMe": "Notify me when live",
+  "cNotifyMeToast": "We'll let you know when the referral program launches!",
+  "cReferStep1": "Invite captains",
+  "cReferStep1Desc": "Share your personal invite link with fellow riders",
+  "cReferStep2": "They start driving",
+  "cReferStep2Desc": "Your referrals onboard and complete their first trips",
+  "cReferStep3": "Earn rewards",
+  "cReferStep3Desc": "A bonus for every captain who joins through you",
+  "cFaq1Q": "The customer did not share the OTP",
+  "cFaq1A": "Ask the customer to open their Gotan or DigiStall app. The 4-digit OTP is shown on their live order screen. Never start a trip without entering it.",
+  "cFaq2Q": "How many orders can I take at once?",
+  "cFaq2A": "You can hold up to 2 active orders. Finish one before you accept another.",
+  "cFaq3Q": "How do I get paid?",
+  "cFaq3A": "Customers pay you directly in cash or by scanning your payment QR code. Your completed trips and earnings are in the Earnings tab.",
+  "cFaq4Q": "I feel unsafe on a trip",
+  "cFaq4A": "Tap the red SOS button on your active trip screen. You can call 112 or share your live location.",
+  "cHeroPre": "Drive on ",
+  "cHeroEm": "your",
+  "cHeroPost": " terms.",
+  "cHeroSub": "Auto, bike or car — earn up to ₹1,000 a day with rides and deliveries near you.",
+  "cStartEarning": "Start earning",
+  "cLogIn": "Log in",
+  "cNewRequest": "New request",
+  "cDailyPotential": "Daily potential",
+  "cVehicleTypes": "Vehicle types",
+  "cServiceCities": "Service cities",
+  "cWelcomeBackCaptain": "Welcome back, Captain.",
+  "cLoginDesc": "Sign in to access your Captain cockpit, live orders, and earnings.",
+  "cSignInWithGoogle": "Sign in with Google",
+  "cSigningIn": "Signing in...",
+  "cNewHere": "Don't have a Captain account?",
+  "cSignUpToDrive": "Sign up to drive",
+  "cSecuredVia": "Secured via DigiStall Firebase Auth",
+  "cStepOf": "Step {current} of {total}",
+  "@cStepOf": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "cStepSub": "Step {current} of {total} · {label}",
+  "@cStepSub": {
+    "placeholders": {
+      "current": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      },
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "cIdentity": "Identity",
+  "cDigitalId": "Captain ID",
+  "cBasicInfo": "Basic info",
+  "cVerificationLbl": "Verification",
+  "cSignUpDesc": "Join the Digi Captain network. Sign up with your Google account to get verified and start taking rides and deliveries.",
+  "cSignUpWithGoogle": "Sign up with Google",
+  "cConnectingGoogle": "Connecting Google...",
+  "cAlreadyRegistered": "Already registered as a Captain?",
+  "cLoginHere": "Log in here",
+  "cCaptainDomain": "Captain domain",
+  "cTellUsAboutYou": "Tell us about you",
+  "cFullName": "Full name",
+  "cNamePlaceholder": "e.g. Captain Name",
+  "cMobileNumber": "Mobile number",
+  "cGoogleEmail": "Connected Google email",
+  "cUploadDocsTitle": "Upload documents",
+  "cUploadDocsDesc": "Upload your driving licence and payment QR code. Aadhaar and profile photo are optional.",
+  "cRequiredTag": "REQUIRED",
+  "cOptionalTag": "OPTIONAL",
+  "cUploadedTag": "UPLOADED",
+  "cUploadBtn": "Upload",
+  "cAadhaarDesc": "Front & back photo",
+  "cLicenceDesc": "Valid private/commercial DL",
+  "cQrDesc": "UPI QR for customer payments",
+  "cPhotoDesc": "Clear passport-style photo",
+  "cSubmitForReview": "Submit for review",
+  "cSplashPre": "Finding your ",
+  "cSplashEm": "next",
+  "cSplashPost": " ride.",
+  "cSplash1": "Going online",
+  "cSplash2": "Scanning for requests near you",
+  "cSplash3": "Matching your vehicle",
+  "cViewRoute": "View route",
+  "cTripDetails": "Trip details",
+  "cNoRating": "—"
 }

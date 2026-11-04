@@ -1,248 +1,381 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
 
-import '../global/Common.dart';
-import '../global/OrderTypeIcon.dart';
 import '../global/l10n.dart';
-import '../utils/show_exit_dialog.dart';
+import '../model/cap_order.dart';
+import '../services/rider_feed.dart';
+import '../settings/sub_pages.dart';
+import '../ui/cap_visuals.dart';
+import '../ui/widgets.dart';
 
-/// Earnings from delivered orders, split by order source (the website's Earnings tab).
+enum _Tab { earnings, wallet, bonus }
+
+enum _Range { day, week, month }
+
+/// The website's Earnings tab with its Earnings / Wallet / Bonus sections.
+/// Figures come from delivered orders whose latest rider is this rider.
 class EarningsPage extends StatefulWidget {
-  const EarningsPage({super.key});
+  final VoidCallback? onGoHome;
+  const EarningsPage({super.key, this.onGoHome});
 
   @override
   State<EarningsPage> createState() => _EarningsPageState();
 }
 
-class _EarningsSummary {
-  double amount = 0;
-  int count = 0;
+class _Series {
+  final List<double> values;
+  final List<String> labels;
+  final List<Map<String, dynamic>> trips;
+  const _Series(this.values, this.labels, this.trips);
+  double get total => values.fold(0, (a, b) => a + b);
 }
 
 class _EarningsPageState extends State<EarningsPage> {
-  // orderType -> history endpoint, response key and the field holding the rider's amount
-  static const List<Map<String, String>> _sources = [
-    {'type': 'Rider Orders', 'endpoint': 'api/rider/riderhistory', 'key': 'orderHistory', 'amount': 'expectedPrice'},
-    {'type': 'Parcel Orders', 'endpoint': 'api/parcel/parcelhistory', 'key': 'parcelHistory', 'amount': 'expectedPrice'},
-    {'type': 'Digistall Orders', 'endpoint': 'api/digiorder/digiorderhistory', 'key': 'orderItemHistory', 'amount': 'coupontotal'},
-  ];
+  _Tab _tab = _Tab.earnings;
+  _Range _range = _Range.day;
 
-  final Map<String, _EarningsSummary> _summary = {};
-  bool _isLoading = true;
-  bool _hasError = false;
+  RiderFeed get feed => RiderFeed.instance;
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchEarnings();
-  }
-
-  Future<void> _fetchEarnings() async {
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-    });
-
-    final prefs = await SharedPreferences.getInstance();
-    final phoneNumber = prefs.getString('phoneNumber') ?? '';
-    final email = prefs.getString('email') ?? '';
-    final summary = {for (final s in _sources) s['type']!: _EarningsSummary()};
-    var failures = 0;
-
-    await Future.wait(_sources.map((source) async {
-      try {
-        // History is looked up by phone only, so changing city does not hide past earnings.
-        final url = Uri.parse('${Common.baseUrl}${source['endpoint']}?phoneNumber=${Uri.encodeQueryComponent(phoneNumber)}');
-        final response = await http.get(url);
-        if (response.statusCode != 200) {
-          failures++;
-          return;
+  _Series _series() {
+    final l10n = context.l10n;
+    final delivered = feed.delivered;
+    final today = RiderFeed.startOfToday;
+    switch (_range) {
+      case _Range.day:
+        final trips = feed.deliveredSince(today);
+        final slots = List<double>.filled(5, 0);
+        for (final o in trips) {
+          final h = RiderFeed.completedAt(o).hour;
+          final i = h < 11 ? 0 : h < 14 ? 1 : h < 17 ? 2 : h < 21 ? 3 : 4;
+          slots[i] += CapOrder(o).fare;
         }
-        final orders = jsonDecode(response.body)[source['key']];
-        if (orders is! List) return;
-
-        for (final order in orders) {
-          if (!_isDeliveredBy(order, phoneNumber, email)) continue;
-          final entry = summary[source['type']]!;
-          entry.amount += double.tryParse(order[source['amount']]?.toString() ?? '') ?? 0;
-          entry.count++;
+        return _Series(slots, [l10n.cSlotMorning, l10n.cSlotNoon, l10n.cSlotAfternoon, l10n.cSlotEvening, l10n.cSlotNight], trips);
+      case _Range.week:
+      case _Range.month:
+        final days = _range == _Range.week ? 7 : 30;
+        final start = today.subtract(Duration(days: days - 1));
+        final values = List<double>.filled(days, 0);
+        final trips = <Map<String, dynamic>>[];
+        for (final o in delivered) {
+          final t = RiderFeed.completedAt(o);
+          if (t.isBefore(start)) continue;
+          final i = DateTime(t.year, t.month, t.day).difference(start).inDays;
+          if (i < 0 || i >= days) continue;
+          values[i] += CapOrder(o).fare;
+          trips.add(o);
         }
-      } catch (e) {
-        debugPrint('Error fetching ${source['type']} earnings: $e');
-        failures++;
-      }
-    }));
-
-    if (!mounted) return;
-    setState(() {
-      _summary
-        ..clear()
-        ..addAll(summary);
-      _hasError = failures == _sources.length;
-      _isLoading = false;
-    });
-  }
-
-  /// Delivered orders whose latest assigned rider is this rider.
-  bool _isDeliveredBy(dynamic order, String phoneNumber, String email) {
-    if ((order['riderStatus']?.toString().toLowerCase() ?? '') != 'delivered') return false;
-    final riders = order['riderDetails'];
-    if (riders is! List || riders.isEmpty) return false;
-    final rider = riders.last;
-    return rider['phoneNumber']?.toString() == phoneNumber ||
-        (email.isNotEmpty && rider['email']?.toString().toLowerCase() == email.toLowerCase());
-  }
-
-  String _formatAmount(double amount) {
-    return amount == amount.roundToDouble() ? amount.toStringAsFixed(0) : amount.toStringAsFixed(2);
+        final List<String> labels;
+        if (_range == _Range.week) {
+          final names = l10n.cDays.split(',');
+          labels = [for (var i = 0; i < 7; i++) names[start.add(Duration(days: i)).weekday % 7]];
+        } else {
+          labels = [l10n.c30dAgo, l10n.c15d, l10n.cToday];
+        }
+        return _Series(values, labels, trips);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final total = _summary.values.fold<double>(0, (sum, e) => sum + e.amount);
-    final deliveries = _summary.values.fold<int>(0, (sum, e) => sum + e.count);
-
-    return WillPopScope(
-      onWillPop: () => showExitConfirmationDialog(context),
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: Common.secondary,
-          toolbarHeight: 60,
-          leading: Padding(
-            padding: const EdgeInsets.only(left: 8.0),
-            child: Center(
-              child: SvgPicture.asset(
-                'assets/Icons/money-rupee-circle-fill.svg',
-                color: Common.primary,
-                width: 25,
-                height: 25,
-              ),
+    return ListenableBuilder(
+      listenable: feed,
+      builder: (context, _) {
+        return CapPage(
+          onRefresh: feed.refreshHistory,
+          children: [
+            Align(alignment: Alignment.centerLeft, child: CapChip.back(context, label: l10n.cNavHome, onTap: widget.onGoHome)),
+            const SizedBox(height: 14),
+            CapSeg<_Tab>(
+              value: _tab,
+              onChanged: (v) => setState(() => _tab = v),
+              items: [
+                SegItem(_Tab.earnings, l10n.cEarningsTab),
+                SegItem(_Tab.wallet, l10n.cWalletTab),
+                SegItem(_Tab.bonus, l10n.cBonusTab),
+              ],
             ),
+            const SizedBox(height: 18),
+            if (!feed.historyLoaded)
+              const SkeletonBox(height: 320, radius: CapRadius.glass)
+            else
+              switch (_tab) {
+                _Tab.earnings => _earnings(),
+                _Tab.wallet => _wallet(),
+                _Tab.bonus => _bonus(),
+              },
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _earnings() {
+    final p = context.cap;
+    final l10n = context.l10n;
+    final s = _series();
+    final title = switch (_range) { _Range.day => l10n.cYourDay, _Range.week => l10n.cYourWeek, _Range.month => l10n.cYourMonth };
+    final sub = switch (_range) { _Range.day => l10n.cTripsToday, _Range.week => l10n.cTrips7d, _Range.month => l10n.cTrips30d };
+
+    // Split by order source.
+    var rides = 0, parcels = 0, store = 0;
+    for (final o in s.trips) {
+      final c = CapOrder(o);
+      switch (c.kind) {
+        case OrderKind.ride:
+          rides += c.fare;
+        case OrderKind.parcel:
+          parcels += c.fare;
+        case OrderKind.store:
+          store += c.fare;
+      }
+    }
+    final sum = rides + parcels + store;
+    final parts = [(l10n.cGotanRides, rides), (l10n.cGotanParcels, parcels), (l10n.cDigistallStore, store)];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        KLabel(l10n.cNavEarnings),
+        Row(
+          children: [
+            Expanded(child: Text(title, style: CapText.serif(size: 38, color: p.tx, height: 1))),
+            CapSeg<_Range>(
+              small: true,
+              value: _range,
+              onChanged: (v) => setState(() => _range = v),
+              items: [SegItem(_Range.day, l10n.cToday), SegItem(_Range.week, l10n.cRange7D), SegItem(_Range.month, l10n.cRange30D)],
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(rupees(s.total), style: CapText.serif(size: 56, color: p.tx, height: 1)),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            CapTag(l10n.cTripsCount('${s.trips.length}'), color: p.lv),
+            const SizedBox(width: 8),
+            Flexible(child: Text(sub, style: CapText.sans(size: 13, color: p.mu))),
+          ],
+        ),
+        const SizedBox(height: 18),
+        EarningsChart(key: ValueKey(_range), values: s.values, labels: s.labels),
+        const SizedBox(height: 18),
+        CapList(
+          children: [
+            for (final (label, amount) in parts)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: Text(label, style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx))),
+                        Text(rupees(amount), style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _Bar(fraction: sum == 0 ? 0 : amount / sum, height: 6),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _wallet() {
+    final p = context.cap;
+    final l10n = context.l10n;
+    var prepaid = 0, cash = 0;
+    for (final o in feed.delivered) {
+      final c = CapOrder(o);
+      if (c.isCod) {
+        cash += c.fare;
+      } else {
+        prepaid += c.fare;
+      }
+    }
+    final recent = feed.delivered.take(15).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        KLabel(l10n.cWalletTab),
+        const SizedBox(height: 4),
+        Glass(
+          radius: 28,
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              KLabel(l10n.cPrepaidEarnings),
+              const SizedBox(height: 2),
+              Text(rupees(prepaid), style: CapText.serif(size: 52, color: p.tx, height: 1)),
+              const SizedBox(height: 16),
+              CapButton(label: l10n.cWithdrawToUpi, height: 52, onPressed: () => showCapToast(context, l10n.cWithdrawSoon)),
+            ],
           ),
-          actions: [
-            GestureDetector(
-              onTap: _isLoading ? null : _fetchEarnings,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 15.0),
-                child: Image.asset('assets/Icons/refresh.png', width: 20, height: 20, color: Colors.white),
+        ),
+        const SizedBox(height: 16),
+        CapList(
+          children: [
+            CapListItem(
+              leading: const IconBox(icon: CapIcons.wal),
+              trailing: Text(rupees(cash), style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.cCashInHand, style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx)),
+                  Text(l10n.cCashInHandSub, style: CapText.sans(size: 12, color: p.mu)),
+                ],
               ),
             ),
           ],
-          title: Text(l10n.earnings, style: TextStyle(fontSize: Common.title, fontFamily: Common.family, color: Colors.white)),
         ),
-        body: RefreshIndicator(
-          backgroundColor: Common.secondary,
-          color: Common.primary,
-          onRefresh: _fetchEarnings,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(12),
+        const SizedBox(height: 22),
+        KLabel(l10n.cRecentActivity, padding: const EdgeInsets.only(bottom: 10)),
+        if (recent.isEmpty)
+          CapListMessage(l10n.cNoTransactions)
+        else
+          CapList(
             children: [
-              Card(
-                elevation: 5,
-                color: Common.secondary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              for (final o in recent)
+                CapListItem(
+                  leading: const IconBox(icon: CapIcons.chk),
+                  trailing: Text('+${rupees(CapOrder(o).fare)}', style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.lv)),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        l10n.totalEarnings.toUpperCase(),
-                        style: TextStyle(fontSize: Common.h3, color: Common.light, fontFamily: 'bold', fontWeight: Common.weight2),
+                        l10n.cTripActivity(CapOrder(o).shortId, CapOrder(o).kindLabel(l10n)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx),
                       ),
-                      const SizedBox(height: 8),
-                      _isLoading
-                          ? SizedBox(
-                              height: 36,
-                              width: 36,
-                              child: CircularProgressIndicator(color: Common.primary, strokeWidth: 2.5),
-                            )
-                          : Text(
-                              '₹${_formatAmount(total)}',
-                              style: TextStyle(fontSize: 34, color: Common.primary, fontFamily: 'bold', fontWeight: Common.weight),
-                            ),
-                      const SizedBox(height: 6),
                       Text(
-                        l10n.completedDeliveries(deliveries),
-                        style: TextStyle(fontSize: Common.h3, color: Common.primary, fontFamily: 'bold', fontWeight: Common.weight2),
+                        '${l10n.statusDelivered} · ${DateFormat('d MMM, hh:mm a').format(RiderFeed.completedAt(o))}',
+                        style: CapText.sans(size: 12, color: p.mu),
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  l10n.earningsBreakdown,
-                  style: TextStyle(fontSize: Common.h1, color: Common.secondary, fontFamily: 'bold', fontWeight: Common.weight),
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (_hasError)
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    l10n.couldNotLoadEarnings,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: Common.h2, color: Colors.red, fontFamily: 'bold'),
-                  ),
-                ),
-              for (final source in _sources) _buildRow(source['type']!),
             ],
           ),
-        ),
-      ),
+      ],
     );
   }
 
-  Widget _buildRow(String orderType) {
+  Widget _bonus() {
+    final p = context.cap;
     final l10n = context.l10n;
-    final entry = _summary[orderType] ?? _EarningsSummary();
-    final subtitle = orderType == 'Digistall Orders'
-        ? l10n.deliveredOrdersCount(entry.count)
-        : orderType == 'Parcel Orders'
-            ? l10n.deliveredParcelsCount(entry.count)
-            : l10n.completedRidesCount(entry.count);
-
-    return Card(
-      elevation: 3,
-      color: Common.primary,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
+    final todayTrips = feed.todayTrips;
+    final weekTrips = feed.deliveredSince(RiderFeed.startOfToday.subtract(const Duration(days: 6))).length;
+    final targets = [(l10n.cDailyTarget, todayTrips, 10, 150), (l10n.cWeeklyTarget, weekTrips, 50, 500)];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            Container(
-              height: 40,
-              width: 40,
-              decoration: BoxDecoration(
-                color: Common.secondary,
-                borderRadius: BorderRadius.circular(10),
+            KLabel(l10n.cBonusTab, padding: EdgeInsets.zero),
+            const SizedBox(width: 8),
+            CapTag(l10n.cComingSoonTag, color: p.amx, size: 10),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Glass(
+          radius: 24,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              IconBox(icon: CapIcons.bolt, color: p.am, background: p.am.withValues(alpha: 0.15)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(l10n.cPeakHours, style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx)),
+                    Text(l10n.cPeakHoursSub, style: CapText.sans(size: 13, color: p.mu)),
+                  ],
+                ),
               ),
-              child: Center(child: OrderTypeIcon(orderType: orderType)),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        for (final (label, current, target, reward) in targets)
+          CapList(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.all(16),
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(l10n.orderTypeName(orderType), style: TextStyle(fontSize: Common.h2, color: Common.secondary, fontFamily: 'bold', fontWeight: Common.weight)),
-                  const SizedBox(height: 2),
-                  Text(subtitle, style: TextStyle(fontSize: Common.h3, color: Common.light, fontFamily: 'bold')),
+                  Row(
+                    children: [
+                      Expanded(child: Text(label, style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.tx))),
+                      Text(rupees(reward), style: CapText.sans(size: 15, weight: FontWeight.w700, color: p.amx)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _Bar(fraction: current / target, height: 8),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(l10n.cTripsProgress('${current.clamp(0, target)}', '$target'), style: CapText.sans(size: 13, color: p.mu)),
+                      ),
+                      CapChip(
+                        label: current >= target ? l10n.cClaim : l10n.cInProgress,
+                        enabled: current >= target,
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        background: p.s1,
+                        onTap: () => showCapToast(context, l10n.cBonusSoon),
+                      ),
+                    ],
+                  ),
                 ],
               ),
+            ],
+          ),
+        const SizedBox(height: 4),
+        CapButton(
+          label: l10n.cReferCaptain,
+          style: CapButtonStyle.ghost,
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ReferPage())),
+        ),
+      ],
+    );
+  }
+}
+
+/// Progress bar with the mint→amber gradient.
+class _Bar extends StatelessWidget {
+  final double fraction;
+  final double height;
+  const _Bar({required this.fraction, required this.height});
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.cap;
+    return Container(
+      height: height,
+      decoration: BoxDecoration(color: p.s2, borderRadius: BorderRadius.circular(9)),
+      alignment: Alignment.centerLeft,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0, end: fraction.clamp(0.0, 1.0)),
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
+        builder: (context, v, _) => FractionallySizedBox(
+          widthFactor: v,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(9),
+              gradient: LinearGradient(colors: [p.lv, p.am]),
             ),
-            Text(
-              _isLoading ? '…' : '₹${_formatAmount(entry.amount)}',
-              style: TextStyle(fontSize: Common.h1, color: Colors.green, fontFamily: 'bold', fontWeight: Common.weight),
-            ),
-          ],
+          ),
         ),
       ),
     );
